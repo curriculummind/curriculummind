@@ -248,3 +248,22 @@ EngageNY and CK-12 are the cleanest available sources actually built for this gr
 * Decisions 001 and 002 remain the target MVP scope the architecture is built for. This decision narrows the *initial content and build target* to a subset of that scope, not a replacement for it — Grades 7–12 and Computer Science remain the next expansion step once this slice works, added via configuration and content ingestion (see the architecture proposal, §14 Subject Architecture and §29 Future Extension Model), with no tutoring-engine change required.
 * **Before any commercial launch on curriculummind.com, the content corpus must be replaced or re-licensed.** Options: secure explicit written commercial permission from CK-12 and/or Great Minds/NYSED (EngageNY); verify and use only the specific OpenStax titles licensed CC BY (not CC BY-NC-SA) where grade-appropriate; source public-domain/government material; or commission original content. This is a tracked pre-launch requirement.
 * Common Core (math) and NGSS (science) standards documents are sourced separately as the Standard/CurriculumFramework mapping layer (§13 of the architecture proposal), not as retrievable teaching content. Their licensing is generally more permissive than CK-12/EngageNY's content licenses but should still be confirmed before commercial use.
+
+---
+
+# Decision 014
+
+**Date:** 2026-08-21
+
+## Decision
+
+The runtime LLM provider (classification and generation) is **Anthropic Claude**. The embedding provider (RAG ingestion and query embedding) is **OpenAI's `text-embedding-3` family**. Both sit behind the `LLMClient` / `EmbeddingClient` interfaces from the architecture proposal (§17), each with exactly one concrete adapter for now.
+
+## Reason
+
+Claude gives strong instruction-following and structured-output reliability for the classification and generation nodes, and keeps the runtime provider consistent with the team's existing tooling. Anthropic does not offer an embeddings API, so embeddings necessarily come from a second provider; OpenAI's `text-embedding-3` models are inexpensive, well-documented, and pair cleanly with pgvector regardless of which provider handles generation.
+
+## Impact
+
+* Two provider API keys are required in the backend environment: an Anthropic key and an OpenAI key.
+* Swapping either provider later is a new adapter class behind the existing interface plus a config flag — see §17 and §33 of the architecture proposal. Swapping the embedding provider specifically also requires re-embedding the corpus (a backfill job, not a schema change).
