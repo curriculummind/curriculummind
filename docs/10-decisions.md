@@ -251,6 +251,26 @@ EngageNY and CK-12 are the cleanest available sources actually built for this gr
 
 ---
 
+# Decision 015
+
+**Date:** 2026-08-24
+
+## Decision
+
+Guided-discovery (Socratic-style) tutoring is the default response mode across **all grades 6-12**, not grade-gated as originally proposed in the architecture (§10, which had defaulted direct explanation for grades 6-9 and Socratic for grades 10-12 only). Each turn stays short: a minimal concrete anchor or example, then a genuine question the student must answer before getting more -- not a full paragraph explanation with a token question appended, and not a bare question with zero grounding. Full direct explanation remains available as an escalation path (explicit student request, or repeated non-progress after a couple of guided turns), not as the default.
+
+## Reason
+
+The M0 generation prompt (direct explanation only, since strategy selection wasn't built yet) produced a paragraph lecture indistinguishable from asking a general-purpose chatbot the same question. That directly undercuts the product's core thesis -- "a tutor should help students think rather than replace thinking" -- and its differentiation from Claude/GPT used directly. Pure lecture answers fail that test regardless of grade band.
+
+## Impact
+
+* Reshapes the default strategy in the M1 pedagogical policy system (§10) before that system is built -- no rework of shipped M0 code, since strategy selection didn't exist yet.
+* The "direct explanation default for 6-9" line in architecture §10 is superseded by this decision for the default case; direct explanation remains a real strategy, just not the default one.
+* Prompt design for the default strategy needs to produce short, anchored, question-ending turns -- not full explanations -- which is a real prompt-engineering task, not just a strategy-selection routing change.
+
+---
+
 # Decision 014
 
 **Date:** 2026-08-21
