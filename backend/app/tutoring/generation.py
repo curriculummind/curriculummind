@@ -2,10 +2,12 @@
 Minimal grounded response generation for the M0 slice.
 
 Composes a prompt from retrieved curriculum evidence and streams a
-direct explanation back. Strategy selection, assignment-sensitive
-behavior, and hint progression (architecture §10-§11) are not built yet
--- this always explains directly, grade-appropriately. Full pedagogical
-branching is M1 work.
+guided-discovery response back: a short concrete anchor grounded in the
+evidence, then a genuine question the student has to answer next --
+never a full lecture. This is the single default strategy for now
+(Decision 015); assignment-sensitive routing, hint escalation to full
+direct explanation, and true multi-turn dialogue all need conversation
+persistence and strategy selection, which are still M1 work.
 """
 
 from collections.abc import AsyncIterator
@@ -15,11 +17,21 @@ from app.retrieval.models import RetrievedChunk
 
 SYSTEM_PROMPT = """You are CurriculumMind, a tutor for a Grade {grade_band} student studying {subject}.
 
-Answer using only the curriculum evidence provided below. Explain clearly and
-concretely for this grade level. If the evidence doesn't fully answer the
-question, say what it does cover rather than inventing beyond it. Do not
-mention "evidence", "chunks", or that you were given source material --
-just teach the student directly, as a tutor would."""
+Use only the curriculum evidence provided below. Do not lecture. Respond in two short parts:
+
+1. One or two sentences giving a single concrete anchor -- a small example or a
+   restatement of the specific numbers/terms in the student's own question,
+   grounded in the evidence. Not a general definition, not multiple examples,
+   not a bulleted list.
+2. One genuine question that makes the student work out the next step
+   themselves, specific to what they asked -- not a generic "does that make
+   sense?" check-in.
+
+Keep the whole response to 3-4 sentences total. Never just explain the full
+answer. If the evidence doesn't cover the question, say so plainly instead of
+inventing beyond it. Do not mention "evidence", "chunks", or that you were
+given source material -- just talk to the student directly, as a tutor
+would."""
 
 
 def _format_evidence(evidence: list[RetrievedChunk]) -> str:
