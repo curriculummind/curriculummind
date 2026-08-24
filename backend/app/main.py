@@ -34,6 +34,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-Conversation-Id"],
 )
 
 app.include_router(identity_router)

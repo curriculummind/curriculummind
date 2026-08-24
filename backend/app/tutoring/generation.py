@@ -43,13 +43,15 @@ def _format_evidence(evidence: list[RetrievedChunk]) -> str:
 async def generate_grounded_response(
     question: str,
     evidence: list[RetrievedChunk],
+    history: list[Message],
     *,
     subject: str,
     grade_band: str,
     llm: LLMClient,
 ) -> AsyncIterator[str]:
-    """Stream a direct, grade-appropriate explanation grounded in evidence."""
+    """Stream a short, question-led response grounded in evidence and prior turns."""
     system = SYSTEM_PROMPT.format(grade_band=grade_band, subject=subject)
     user_message = f"Curriculum evidence:\n\n{_format_evidence(evidence)}\n\nStudent question: {question}"
-    async for token in llm.generate_text([Message(role="user", content=user_message)], system=system):
+    messages = [*history, Message(role="user", content=user_message)]
+    async for token in llm.generate_text(messages, system=system):
         yield token
