@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from app.config import get_settings
 from app.db import get_pool
 from app.identity.auth import get_current_user_id
+from app.identity.profiles import get_profile
 from app.providers.embeddings import OpenAIEmbeddingClient
 from app.providers.llm import AnthropicLLMClient, Message
 from app.retrieval.pipeline import retrieve
@@ -66,6 +67,12 @@ async def ask(request: AskRequest, user_id: str = Depends(get_current_user_id)) 
     """Load conversation history, retrieve evidence, and stream a response, persisting both turns."""
     pool = get_pool()
     settings = get_settings()
+
+    if await get_profile(pool, user_id) is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Profile not set up yet. Complete sign-up before asking a question.",
+        )
 
     if request.conversation_id is None:
         conversation_id = await create_conversation(pool, user_id, request.subject)

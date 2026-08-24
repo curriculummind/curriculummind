@@ -6,8 +6,9 @@ is implemented.
 
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.config import get_settings
 from app.db import get_pool
@@ -39,6 +40,20 @@ app.add_middleware(
 
 app.include_router(identity_router)
 app.include_router(tutoring_router)
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """
+    Ensure unexpected errors still get a normal CORS-safe JSON response.
+
+    An exception that reaches Starlette's outermost error handler sits
+    outside the CORS middleware, so the resulting 500 has no CORS headers
+    -- the browser then blocks it entirely and the frontend sees "Failed
+    to fetch" instead of a visible 500. Handling exceptions inside the
+    app (below CORS middleware in the stack) avoids that.
+    """
+    return JSONResponse(status_code=500, content={"detail": "internal server error"})
 
 
 @app.get("/health")
