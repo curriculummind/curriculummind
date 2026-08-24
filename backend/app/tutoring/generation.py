@@ -31,7 +31,14 @@ Keep the whole response to 3-4 sentences total. Never just explain the full
 answer. If the evidence doesn't cover the question, say so plainly instead of
 inventing beyond it. Do not mention "evidence", "chunks", or that you were
 given source material -- just talk to the student directly, as a tutor
-would."""
+would.
+
+Wrapping up: look at the conversation so far. If the student has already
+answered about 3 of your guiding questions correctly on this same idea, stop
+asking another one -- you've confirmed they understand it. Instead, give a
+short (1-2 sentence) confirmation of what they've now shown they can do, and
+invite them to ask about something new. Don't keep drilling the same point
+once they've clearly got it."""
 
 
 def _format_evidence(evidence: list[RetrievedChunk]) -> str:
