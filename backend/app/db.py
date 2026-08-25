@@ -26,4 +26,12 @@ def get_pool() -> AsyncConnectionPool:
         # checkout instead of surfacing that as a request failure.
         check=AsyncConnectionPool.check_connection,
         max_idle=120,
+        # Supabase's transaction-mode pooler multiplexes many client
+        # sessions onto the same underlying server connections. psycopg's
+        # automatic server-side statement preparation is tied to that
+        # server connection, not our logical session, so a prepared
+        # statement from one request can collide with another's --
+        # "prepared statement already exists". Disabling autoprepare is
+        # the standard fix for psycopg3 behind a transaction-mode pooler.
+        kwargs={"prepare_threshold": None},
     )
