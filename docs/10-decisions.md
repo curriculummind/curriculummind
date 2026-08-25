@@ -287,3 +287,23 @@ Claude gives strong instruction-following and structured-output reliability for 
 
 * Two provider API keys are required in the backend environment: an Anthropic key and an OpenAI key.
 * Swapping either provider later is a new adapter class behind the existing interface plus a config flag — see §17 and §33 of the architecture proposal. Swapping the embedding provider specifically also requires re-embedding the corpus (a backfill job, not a schema change).
+
+---
+
+# Decision 016
+
+**Date:** 2026-08-24
+
+## Decision
+
+Retrieval confidence is no longer decided by a raw cosine-similarity threshold alone. When similarity-based confidence is "low," the pipeline now asks the model directly whether the top retrieved chunk can actually answer the student's question before falling back to "no curriculum material on this."
+
+## Reason
+
+Real testing showed the similarity distributions for on-topic and off-topic questions overlap on a corpus this size: "what is a ribosome" (genuinely covered by ingested content) scored 0.23 cosine similarity, while "how do I bake a cake" (genuinely off-topic) scored 0.32 -- higher -- because the Ratios and Unit Rates content uses recipe/baking examples. No single threshold value can cleanly separate cases like that; moving the number only trades one failure mode for another, which is exactly what happened across the last two threshold recalibrations (Decision 016 supersedes the threshold-only approach documented in `app/retrieval/confidence.py`'s calibration comment). This is the evidence-driven trigger the architecture proposal's own decision table (§31) called for before adding a reranking-style step -- not a routine adjustment.
+
+## Impact
+
+* One additional classification call (`generate_structured`, built earlier but previously unused) runs only on the low-confidence path, not on every request -- latency and cost impact is bounded to ambiguous cases.
+* `app/retrieval/confidence.py`'s pure-similarity gate is unchanged and still runs first; this is a second-pass escalation, not a replacement.
+* A full dedicated reranker (cross-encoder or similar) remains deferred -- this targeted fix resolved the demonstrated failure cases without that heavier addition.
