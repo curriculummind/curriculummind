@@ -17,7 +17,9 @@ from app.identity.auth import get_current_user_id
 from app.identity.profiles import get_profile
 from app.providers.embeddings import OpenAIEmbeddingClient
 from app.providers.llm import AnthropicLLMClient, Message
+from app.retrieval.models import ConfidenceResult
 from app.retrieval.pipeline import retrieve
+from app.retrieval.relevance import is_actually_relevant
 from app.tutoring.conversations import (
     append_message,
     create_conversation,
@@ -100,6 +102,15 @@ async def ask(request: AskRequest, user_id: str = Depends(get_current_user_id)) 
         embedder=embedder,
         pool=pool,
     )
+
+    # Similarity alone can't cleanly separate on-topic from off-topic on a
+    # corpus this size (a short single-concept question can score lower
+    # than an off-topic one that happens to overlap lexically with the
+    # content). On a low-confidence result, ask the model directly whether
+    # the top candidate actually answers the question before giving up.
+    if result.band == "low" and result.evidence:
+        if await is_actually_relevant(request.question, result.evidence[0], llm):
+            result = ConfidenceResult(band="high", evidence=result.evidence)
 
     async def stream_and_persist(text_stream):
         pieces: list[str] = []
