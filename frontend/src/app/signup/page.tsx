@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { Logo } from "@/components/logo";
 
 /** Sign-up form: creates a Supabase Auth user, then a matching backend profile. Grade is fixed to 6 -- the only grade band with content ingested so far. */
 export default function SignupPage() {
@@ -52,55 +53,68 @@ export default function SignupPage() {
 
   if (status === "check-email") {
     return (
-      <main className="mx-auto max-w-sm p-8">
-        <h1 className="text-xl font-semibold">Check your email</h1>
-        <p className="mt-2 text-sm text-gray-600">
-          We sent a confirmation link to {email}. Confirm it, then log in.
-        </p>
+      <main className="flex min-h-full flex-col items-center justify-center px-6 py-16">
+        <div className="mb-10">
+          <Logo />
+        </div>
+        <div className="w-full max-w-sm rounded-lg border border-rule bg-paper-2 p-8 text-center shadow-[0_18px_40px_-24px_rgba(28,34,48,0.25)]">
+          <h1 className="font-display text-2xl font-medium text-ink">Check your email</h1>
+          <p className="mt-3 text-sm text-ink/65">
+            We sent a confirmation link to {email}. Confirm it, then log in.
+          </p>
+        </div>
       </main>
     );
   }
 
   return (
-    <main className="mx-auto max-w-sm p-8">
-      <h1 className="text-xl font-semibold">Sign up</h1>
-      <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-3">
-        <input
-          type="text"
-          placeholder="Name"
-          required
-          value={displayName}
-          onChange={(e) => setDisplayName(e.target.value)}
-          className="rounded border px-3 py-2"
-        />
-        <input
-          type="email"
-          placeholder="Email"
-          required
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          className="rounded border px-3 py-2"
-        />
-        <input
-          type="password"
-          placeholder="Password"
-          required
-          minLength={6}
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          className="rounded border px-3 py-2"
-        />
-        {error && <p className="text-sm text-red-600">{error}</p>}
-        <button
-          type="submit"
-          disabled={status === "loading"}
-          className="rounded bg-black px-3 py-2 text-white disabled:opacity-50"
-        >
-          {status === "loading" ? "Creating account..." : "Sign up"}
-        </button>
-      </form>
-      <p className="mt-4 text-sm text-gray-600">
-        Already have an account? <a href="/login" className="underline">Log in</a>
+    <main className="flex min-h-full flex-col items-center justify-center px-6 py-16">
+      <div className="mb-10">
+        <Logo />
+      </div>
+      <div className="w-full max-w-sm rounded-lg border border-rule bg-paper-2 p-8 shadow-[0_18px_40px_-24px_rgba(28,34,48,0.25)]">
+        <h1 className="font-display text-2xl font-medium text-ink">Sign up</h1>
+        <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-3">
+          <input
+            type="text"
+            placeholder="Name"
+            required
+            value={displayName}
+            onChange={(e) => setDisplayName(e.target.value)}
+            className="rounded border border-rule bg-paper px-3 py-2 text-ink placeholder:text-ink/40 focus:outline-none focus:ring-1 focus:ring-gold"
+          />
+          <input
+            type="email"
+            placeholder="Email"
+            required
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            className="rounded border border-rule bg-paper px-3 py-2 text-ink placeholder:text-ink/40 focus:outline-none focus:ring-1 focus:ring-gold"
+          />
+          <input
+            type="password"
+            placeholder="Password"
+            required
+            minLength={6}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            className="rounded border border-rule bg-paper px-3 py-2 text-ink placeholder:text-ink/40 focus:outline-none focus:ring-1 focus:ring-gold"
+          />
+          {error && <p className="text-sm text-red-600">{error}</p>}
+          <button
+            type="submit"
+            disabled={status === "loading"}
+            className="rounded bg-ink px-3 py-2 font-medium text-paper transition hover:opacity-90 disabled:opacity-50"
+          >
+            {status === "loading" ? "Creating account..." : "Sign up"}
+          </button>
+        </form>
+      </div>
+      <p className="mt-6 text-sm text-ink/60">
+        Already have an account?{" "}
+        <a href="/login" className="font-medium text-gold underline underline-offset-2">
+          Log in
+        </a>
       </p>
     </main>
   );
