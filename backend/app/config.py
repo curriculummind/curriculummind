@@ -26,6 +26,15 @@ class Settings(BaseSettings):
 
     cors_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
 
+    max_upload_bytes: int = 10 * 1024 * 1024
+    allowed_upload_mime_types: list[str] = [
+        "image/jpeg",
+        "image/png",
+        "image/webp",
+        "application/pdf",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ]
+
 
 @lru_cache
 def get_settings() -> Settings:
