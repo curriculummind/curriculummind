@@ -44,6 +44,35 @@ async def get_conversation_owner(pool: AsyncConnectionPool, conversation_id: str
     return str(row["student_id"]) if row else None
 
 
+async def get_tutoring_state(pool: AsyncConnectionPool, conversation_id: str) -> dict:
+    """Return a conversation's struggle-escalation state: phase and both counters."""
+    async with pool.connection() as conn:
+        async with conn.cursor(row_factory=dict_row) as cur:
+            await cur.execute(
+                "select tutoring_phase, struggle_count, confirm_count from conversations where id = %s",
+                (conversation_id,),
+            )
+            row = await cur.fetchone()
+    return dict(row)
+
+
+async def update_tutoring_state(
+    pool: AsyncConnectionPool,
+    conversation_id: str,
+    *,
+    tutoring_phase: str,
+    struggle_count: int,
+    confirm_count: int,
+) -> None:
+    """Persist a conversation's struggle-escalation phase and counters."""
+    async with pool.connection() as conn:
+        await conn.execute(
+            "update conversations set tutoring_phase = %s, struggle_count = %s, confirm_count = %s "
+            "where id = %s",
+            (tutoring_phase, struggle_count, confirm_count, conversation_id),
+        )
+
+
 async def get_messages(pool: AsyncConnectionPool, conversation_id: str) -> list[dict]:
     """Return a conversation's messages in order, oldest first."""
     async with pool.connection() as conn:
@@ -65,4 +94,22 @@ async def append_message(pool: AsyncConnectionPool, conversation_id: str, role: 
             )
         await conn.execute(
             "update conversations set updated_at = now() where id = %s", (conversation_id,)
+        )
+
+
+async def record_flagged_interaction(
+    pool: AsyncConnectionPool,
+    conversation_id: str,
+    student_id: str,
+    *,
+    category: str,
+    question: str,
+    blocked: bool,
+) -> None:
+    """Record a content-safety flag (Decision 022), whether or not it was blocked."""
+    async with pool.connection() as conn:
+        await conn.execute(
+            "insert into flagged_interactions (conversation_id, student_id, category, question, blocked) "
+            "values (%s, %s, %s, %s, %s)",
+            (conversation_id, student_id, category, question, blocked),
         )
