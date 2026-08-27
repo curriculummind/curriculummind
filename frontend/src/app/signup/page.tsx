@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { Logo } from "@/components/logo";
+import { AuthShell } from "@/components/auth-shell";
 
 /** Sign-up form: creates a Supabase Auth user, then a matching backend profile. Grade is fixed to 6 -- the only grade band with content ingested so far. */
 export default function SignupPage() {
@@ -53,69 +53,72 @@ export default function SignupPage() {
 
   if (status === "check-email") {
     return (
-      <main className="flex min-h-full flex-col items-center justify-center px-6 py-16">
-        <div className="mb-10">
-          <Logo />
-        </div>
-        <div className="w-full max-w-sm rounded-lg border border-rule bg-paper-2 p-8 text-center shadow-[0_18px_40px_-24px_rgba(28,34,48,0.25)]">
-          <h1 className="font-display text-2xl font-medium text-ink">Check your email</h1>
-          <p className="mt-3 text-sm text-ink/65">
-            We sent a confirmation link to {email}. Confirm it, then log in.
-          </p>
-        </div>
-      </main>
+      <AuthShell eyebrow="Almost there" heading="Check your email" lede="One last step before your first session.">
+        <p className="text-sm leading-relaxed text-ink/70">
+          We sent a confirmation link to <span className="font-medium text-ink">{email}</span>. Confirm it,
+          then log in.
+        </p>
+      </AuthShell>
     );
   }
 
   return (
-    <main className="flex min-h-full flex-col items-center justify-center px-6 py-16">
-      <div className="mb-10">
-        <Logo />
-      </div>
-      <div className="w-full max-w-sm rounded-lg border border-rule bg-paper-2 p-8 shadow-[0_18px_40px_-24px_rgba(28,34,48,0.25)]">
-        <h1 className="font-display text-2xl font-medium text-ink">Sign up</h1>
-        <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-3">
+    <AuthShell eyebrow="Get started" heading="Sign up" lede="Create an account to start your first session.">
+      <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+        <div>
+          <label className="mb-[7px] block font-mono text-[0.68rem] tracking-[0.06em] text-ink/50 uppercase">
+            Name
+          </label>
           <input
             type="text"
-            placeholder="Name"
+            placeholder="Your name"
             required
             value={displayName}
             onChange={(e) => setDisplayName(e.target.value)}
-            className="rounded border border-rule bg-paper px-3 py-2 text-ink placeholder:text-ink/40 focus:outline-none focus:ring-1 focus:ring-gold"
+            className="w-full rounded border border-rule bg-paper-2 px-3.5 py-3 text-ink placeholder:text-ink/30 focus:border-gold focus:ring-2 focus:ring-gold/25 focus:outline-none"
           />
+        </div>
+        <div>
+          <label className="mb-[7px] block font-mono text-[0.68rem] tracking-[0.06em] text-ink/50 uppercase">
+            Email
+          </label>
           <input
             type="email"
-            placeholder="Email"
+            placeholder="you@school.edu"
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="rounded border border-rule bg-paper px-3 py-2 text-ink placeholder:text-ink/40 focus:outline-none focus:ring-1 focus:ring-gold"
+            className="w-full rounded border border-rule bg-paper-2 px-3.5 py-3 text-ink placeholder:text-ink/30 focus:border-gold focus:ring-2 focus:ring-gold/25 focus:outline-none"
           />
+        </div>
+        <div>
+          <label className="mb-[7px] block font-mono text-[0.68rem] tracking-[0.06em] text-ink/50 uppercase">
+            Password
+          </label>
           <input
             type="password"
-            placeholder="Password"
             required
             minLength={6}
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="rounded border border-rule bg-paper px-3 py-2 text-ink placeholder:text-ink/40 focus:outline-none focus:ring-1 focus:ring-gold"
+            className="w-full rounded border border-rule bg-paper-2 px-3.5 py-3 text-ink placeholder:text-ink/30 focus:border-gold focus:ring-2 focus:ring-gold/25 focus:outline-none"
           />
-          {error && <p className="text-sm text-red-600">{error}</p>}
-          <button
-            type="submit"
-            disabled={status === "loading"}
-            className="rounded bg-ink px-3 py-2 font-medium text-paper transition hover:opacity-90 disabled:opacity-50"
-          >
-            {status === "loading" ? "Creating account..." : "Sign up"}
-          </button>
-        </form>
-      </div>
-      <p className="mt-6 text-sm text-ink/60">
+        </div>
+        {error && <p className="text-sm text-red-600">{error}</p>}
+        <button
+          type="submit"
+          disabled={status === "loading"}
+          className="mt-1 rounded bg-ink px-3 py-3.5 font-semibold text-paper transition hover:opacity-90 disabled:opacity-50"
+        >
+          {status === "loading" ? "Creating account..." : "Sign up"}
+        </button>
+      </form>
+      <p className="mt-6 text-center text-sm text-ink/60">
         Already have an account?{" "}
-        <a href="/login" className="font-medium text-gold underline underline-offset-2">
+        <a href="/login" className="font-semibold text-gold underline underline-offset-2">
           Log in
         </a>
       </p>
-    </main>
+    </AuthShell>
   );
 }

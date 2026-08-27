@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { Logo } from "@/components/logo";
+import { AuthShell } from "@/components/auth-shell";
 
 /** Login form: signs in with Supabase Auth and redirects to the chat page. */
 export default function LoginPage() {
@@ -47,45 +47,48 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-full flex-col items-center justify-center px-6 py-16">
-      <div className="mb-10">
-        <Logo />
-      </div>
-      <div className="w-full max-w-sm rounded-lg border border-rule bg-paper-2 p-8 shadow-[0_18px_40px_-24px_rgba(28,34,48,0.25)]">
-        <h1 className="font-display text-2xl font-medium text-ink">Log in</h1>
-        <form onSubmit={handleSubmit} className="mt-6 flex flex-col gap-3">
+    <AuthShell eyebrow="Welcome back" heading="Log in" lede="Continue a session or start a new one.">
+      <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+        <div>
+          <label className="mb-[7px] block font-mono text-[0.68rem] tracking-[0.06em] text-ink/50 uppercase">
+            Email
+          </label>
           <input
             type="email"
-            placeholder="Email"
+            placeholder="you@school.edu"
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="rounded border border-rule bg-paper px-3 py-2 text-ink placeholder:text-ink/40 focus:outline-none focus:ring-1 focus:ring-gold"
+            className="w-full rounded border border-rule bg-paper-2 px-3.5 py-3 text-ink placeholder:text-ink/30 focus:border-gold focus:ring-2 focus:ring-gold/25 focus:outline-none"
           />
+        </div>
+        <div>
+          <label className="mb-[7px] block font-mono text-[0.68rem] tracking-[0.06em] text-ink/50 uppercase">
+            Password
+          </label>
           <input
             type="password"
-            placeholder="Password"
             required
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="rounded border border-rule bg-paper px-3 py-2 text-ink placeholder:text-ink/40 focus:outline-none focus:ring-1 focus:ring-gold"
+            className="w-full rounded border border-rule bg-paper-2 px-3.5 py-3 text-ink placeholder:text-ink/30 focus:border-gold focus:ring-2 focus:ring-gold/25 focus:outline-none"
           />
-          {error && <p className="text-sm text-red-600">{error}</p>}
-          <button
-            type="submit"
-            disabled={loading}
-            className="rounded bg-ink px-3 py-2 font-medium text-paper transition hover:opacity-90 disabled:opacity-50"
-          >
-            {loading ? "Logging in..." : "Log in"}
-          </button>
-        </form>
-      </div>
-      <p className="mt-6 text-sm text-ink/60">
+        </div>
+        {error && <p className="text-sm text-red-600">{error}</p>}
+        <button
+          type="submit"
+          disabled={loading}
+          className="mt-1 rounded bg-ink px-3 py-3.5 font-semibold text-paper transition hover:opacity-90 disabled:opacity-50"
+        >
+          {loading ? "Logging in..." : "Log in"}
+        </button>
+      </form>
+      <p className="mt-6 text-center text-sm text-ink/60">
         No account yet?{" "}
-        <a href="/signup" className="font-medium text-gold underline underline-offset-2">
+        <a href="/signup" className="font-semibold text-gold underline underline-offset-2">
           Sign up
         </a>
       </p>
-    </main>
+    </AuthShell>
   );
 }
