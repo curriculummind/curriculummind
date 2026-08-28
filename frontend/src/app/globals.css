@@ -17,6 +17,7 @@
   --color-ink: var(--ink);
   --color-gold: var(--gold);
   --color-sage: var(--sage);
+  --color-clay: var(--clay);
   --color-rule: var(--rule);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
@@ -64,6 +65,7 @@
   --gold: #c98f1f;
   --gold-rgb: 201, 143, 31;
   --sage: #4f7d58;
+  --clay: #b1543a;
   --rule: rgba(28, 34, 48, 0.12);
 
   --background: var(--paper);

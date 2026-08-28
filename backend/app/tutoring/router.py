@@ -33,6 +33,7 @@ from app.tutoring.conversations import (
 )
 from app.tutoring.generation import generate_grounded_response
 from app.tutoring.graph import run_tutoring_pipeline
+from app.tutoring.progress import Module, get_topic_progress
 from app.tutoring.safety import SENSITIVE_NO_EVIDENCE_MESSAGE, response_for
 from app.observability.traces import record_decision_trace
 
@@ -222,6 +223,16 @@ async def ask(request: AskRequest, user_id: str = Depends(get_current_user_id)) 
     if citation_framework:
         response.headers["X-Citation-Framework"] = citation_framework
     return response
+
+
+@router.get("/progress")
+async def progress(
+    subject: str, grade_band: str = "6", user_id: str = Depends(get_current_user_id)
+) -> dict[str, list[Module]]:
+    """Every topic in a subject/grade band, with this student's current mastery tier on each."""
+    pool = get_pool()
+    modules = await get_topic_progress(pool, user_id, subject_slug=subject, grade_band=grade_band)
+    return {"modules": modules}
 
 
 @router.post("/transcribe")

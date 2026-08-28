@@ -3,7 +3,7 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { Logo } from "@/components/logo";
+import { SelectedTopic, TopicChart } from "@/components/topic-chart";
 
 type ChatMessage = {
   role: "student" | "assistant";
@@ -51,6 +51,8 @@ export function ChatClient() {
   const [loading, setLoading] = useState(false);
   const [attaching, setAttaching] = useState(false);
   const [attachError, setAttachError] = useState<string | null>(null);
+  const [selectedTopic, setSelectedTopic] = useState<SelectedTopic | null>(null);
+  const [progressVersion, setProgressVersion] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -164,6 +166,7 @@ export function ChatClient() {
     }
 
     setLoading(false);
+    setProgressVersion((v) => v + 1);
   }
 
   function handleSubjectChange(next: string) {
@@ -171,6 +174,7 @@ export function ChatClient() {
     setMessages([]);
     setConversationId(null);
     setTutoringPhase("guiding");
+    setSelectedTopic(null);
   }
 
   async function handleLogout() {
@@ -184,43 +188,50 @@ export function ChatClient() {
   const phaseLabel = tutoringPhase === "confirming" ? "Confirming" : "Guiding";
 
   return (
-    <main className="mx-auto flex min-h-full max-w-2xl flex-col px-6 py-10">
-      <div className="mb-8 flex items-center justify-between">
-        <Logo />
-        <button onClick={handleLogout} className="text-sm text-ink/55 underline underline-offset-2 hover:text-ink">
-          Log out
-        </button>
-      </div>
+    <div className="grid h-screen grid-cols-[3fr_7fr]">
+      <TopicChart
+        subject={subject}
+        onSubjectChange={handleSubjectChange}
+        selected={selectedTopic}
+        onSelectTopic={setSelectedTopic}
+        version={progressVersion}
+      />
 
-      <div className="overflow-hidden rounded-lg border border-rule bg-paper-2 shadow-[0_18px_40px_-24px_rgba(28,34,48,0.25)]">
-        <div className="flex items-center justify-between border-b border-rule px-6 py-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-gold to-[color-mix(in_srgb,var(--gold),black_35%)] font-display text-sm font-semibold text-paper">
+      <main className="flex min-h-0 flex-col">
+        <div className="flex items-center justify-between border-b border-rule px-8 py-[18px]">
+          <div className="flex items-center gap-3.5">
+            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-gold to-[color-mix(in_srgb,var(--gold),black_35%)] font-display text-sm font-semibold text-paper">
               {subjectLabel[0]}
             </div>
             <div>
-              <select
-                value={subject}
-                onChange={(e) => handleSubjectChange(e.target.value)}
-                className="-ml-1 rounded bg-transparent px-1 py-0.5 text-sm font-semibold text-ink focus:outline-none"
-              >
-                <option value="math">Math</option>
-                <option value="science">Science</option>
-              </select>
-              <div className="font-mono text-xs text-ink/50">Grade 6</div>
+              <h1 className="font-display text-[1.05rem] font-semibold text-ink">
+                {selectedTopic ? selectedTopic.topicName : `${subjectLabel} session`}
+              </h1>
+              <div className="font-mono text-xs text-ink/50">
+                {selectedTopic ? `${selectedTopic.moduleName} · Grade 6` : "Grade 6"}
+              </div>
             </div>
           </div>
-          <div className="flex items-center gap-2 rounded-full border border-sage/40 px-3 py-1 font-mono text-xs tracking-wide text-sage uppercase">
-            <span className="h-1.5 w-1.5 rounded-full bg-sage" />
-            {phaseLabel}
+          <div className="flex items-center gap-5">
+            <div className="flex items-center gap-2 rounded-full border border-sage/40 px-3 py-1 font-mono text-xs tracking-wide text-sage uppercase">
+              <span className="h-1.5 w-1.5 rounded-full bg-sage" />
+              {phaseLabel}
+            </div>
+            <button
+              onClick={handleLogout}
+              className="text-sm text-ink/55 underline underline-offset-2 hover:text-ink"
+            >
+              Log out
+            </button>
           </div>
         </div>
 
-        <div className="flex flex-col gap-5 px-6 py-7">
-          {messages.length === 0 && (
-            <p className="text-sm text-ink/50">Ask a question below to start a session.</p>
-          )}
-          {messages.map((message, i) => {
+        <div className="flex flex-1 justify-center overflow-y-auto px-8 py-7">
+          <div className="flex w-full max-w-[700px] flex-col gap-5">
+            {messages.length === 0 && (
+              <p className="text-sm text-ink/50">Ask a question below to start a session.</p>
+            )}
+            {messages.map((message, i) => {
             if (message.role === "student") {
               return (
                 <div key={i} className="flex justify-end">
@@ -264,50 +275,53 @@ export function ChatClient() {
                 )}
               </div>
             );
-          })}
+            })}
+          </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="border-t border-rule px-6 py-5">
-          <textarea
-            placeholder={attaching ? "Reading your file..." : "Ask a question, or answer the one above..."}
-            required
-            rows={2}
-            value={question}
-            onChange={(e) => setQuestion(e.target.value)}
-            disabled={attaching}
-            className="w-full rounded border border-rule bg-paper px-3 py-2 text-sm text-ink placeholder:text-ink/40 focus:outline-none focus:ring-1 focus:ring-gold disabled:opacity-50"
-          />
-          <p className="mt-2 text-xs text-ink/45">
-            Attached a photo, PDF, or Word file? Check the transcribed text above is correct before
-            sending, fix anything it misread.
-          </p>
-          <div className="mt-3 flex items-center gap-2">
-            <input
-              type="file"
-              accept={ACCEPTED_UPLOAD_TYPES}
-              ref={fileInputRef}
-              onChange={handleFileChange}
-              className="hidden"
+        <div className="flex justify-center border-t border-rule px-8 py-4">
+          <form onSubmit={handleSubmit} className="w-full max-w-[700px]">
+            <textarea
+              placeholder={attaching ? "Reading your file..." : "Ask a question, or answer the one above..."}
+              required
+              rows={2}
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+              disabled={attaching}
+              className="w-full rounded border border-rule bg-paper-2 px-3 py-2 text-sm text-ink placeholder:text-ink/40 focus:outline-none focus:ring-1 focus:ring-gold disabled:opacity-50"
             />
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={attaching || loading}
-              className="rounded border border-rule px-3 py-2 text-sm text-ink hover:bg-paper-3 disabled:opacity-50"
-            >
-              {attaching ? "Reading..." : "Attach file"}
-            </button>
-            <button
-              type="submit"
-              disabled={loading || attaching}
-              className="rounded bg-ink px-4 py-2 text-sm font-medium text-paper transition hover:opacity-90 disabled:opacity-50"
-            >
-              {loading ? "Thinking..." : "Ask"}
-            </button>
-          </div>
-          {attachError && <p className="mt-2 text-sm text-red-600">{attachError}</p>}
-        </form>
-      </div>
-    </main>
+            <p className="mt-2 text-xs text-ink/45">
+              Attached a photo, PDF, or Word file? Check the transcribed text above is correct before
+              sending, fix anything it misread.
+            </p>
+            <div className="mt-3 flex items-center gap-2">
+              <input
+                type="file"
+                accept={ACCEPTED_UPLOAD_TYPES}
+                ref={fileInputRef}
+                onChange={handleFileChange}
+                className="hidden"
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={attaching || loading}
+                className="rounded border border-rule px-3 py-2 text-sm text-ink hover:bg-paper-3 disabled:opacity-50"
+              >
+                {attaching ? "Reading..." : "Attach file"}
+              </button>
+              <button
+                type="submit"
+                disabled={loading || attaching}
+                className="rounded bg-ink px-4 py-2 text-sm font-medium text-paper transition hover:opacity-90 disabled:opacity-50"
+              >
+                {loading ? "Thinking..." : "Ask"}
+              </button>
+            </div>
+            {attachError && <p className="mt-2 text-sm text-red-600">{attachError}</p>}
+          </form>
+        </div>
+      </main>
+    </div>
   );
 }
