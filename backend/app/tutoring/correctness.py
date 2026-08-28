@@ -13,11 +13,14 @@ it to update a conversation's struggle/confirm counters and choose a
 generation strategy.
 """
 
+import re
 from typing import Literal
 
 from pydantic import BaseModel
 
 from app.providers.llm import LLMClient, Message
+
+_BLANK_LINE = re.compile(r"\n\s*\n")
 
 CLASSIFICATION_PROMPT = """A tutor asked a student this question:
 
@@ -41,8 +44,28 @@ class AnswerCorrectness(BaseModel):
     status: Literal["correct", "incorrect", "unclear"]
 
 
+def _last_question(assistant_message: str) -> str:
+    """
+    Isolate the trailing question from a guided-discovery response.
+
+    The generation prompts (Decision 015) always separate a stated
+    anchor from the genuine follow-up question with a blank line.
+    Passing the whole anchor+question blob as "the tutor's question"
+    confuses the classifier -- worked-example numbers in the anchor can
+    read as part of the question being judged. Mirrors the same split
+    the frontend does for display (splitAnchorAndPrompt).
+    """
+    parts = _BLANK_LINE.split(assistant_message.strip())
+    last = parts[-1].strip()
+    if len(parts) > 1 and last.endswith("?"):
+        return last
+    return assistant_message
+
+
 async def classify_answer(tutor_question: str, student_answer: str, llm: LLMClient) -> str:
     """Classify a student's answer against the tutor's last question as correct/incorrect/unclear."""
-    prompt = CLASSIFICATION_PROMPT.format(tutor_question=tutor_question, student_answer=student_answer)
+    prompt = CLASSIFICATION_PROMPT.format(
+        tutor_question=_last_question(tutor_question), student_answer=student_answer
+    )
     classification = await llm.generate_structured([Message(role="user", content=prompt)], AnswerCorrectness)
     return classification.status

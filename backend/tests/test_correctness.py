@@ -3,7 +3,7 @@
 from collections.abc import AsyncIterator
 
 from app.providers.llm import LLMClient, Message
-from app.tutoring.correctness import classify_answer
+from app.tutoring.correctness import _last_question, classify_answer
 
 
 class FakeLLMClient(LLMClient):
@@ -41,3 +41,24 @@ async def test_classify_answer_returns_unclear() -> None:
     llm = FakeLLMClient(status="unclear")
     result = await classify_answer("What is 2 + 2?", "I don't know", llm)
     assert result == "unclear"
+
+
+def test_last_question_isolates_trailing_question_from_anchor() -> None:
+    """A blank-line-separated anchor and question returns only the question."""
+    message = (
+        "For every 8 hamburgers, there are 6 hotdogs, that's your ratio, 6 to 8.\n\n"
+        "24 is how many groups of 8?"
+    )
+    assert _last_question(message) == "24 is how many groups of 8?"
+
+
+def test_last_question_falls_back_to_whole_message_without_blank_line() -> None:
+    """A message with no blank-line-separated question returns unchanged, not truncated."""
+    message = "Not quite, try again."
+    assert _last_question(message) == message
+
+
+def test_last_question_falls_back_when_last_segment_is_not_a_question() -> None:
+    """A blank-line-separated closing statement that isn't a question returns the whole message."""
+    message = "You're on the right track.\n\nKeep going with that approach."
+    assert _last_question(message) == message
