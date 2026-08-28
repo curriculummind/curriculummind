@@ -96,7 +96,7 @@ export function TopicChart({
   const height = y + 6;
 
   return (
-    <aside className="flex h-full flex-col border-r border-rule bg-paper-3">
+    <aside className="flex h-screen flex-col border-r border-rule bg-paper-3">
       <div className="border-b border-rule px-5 py-4">
         <div className="mb-4">
           <Logo />
@@ -116,7 +116,7 @@ export function TopicChart({
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 py-4">
+      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
         <div className="mb-3.5 flex flex-wrap gap-3 border-b border-rule pb-3.5 font-mono text-[0.66rem] text-ink/55">
           <span className="flex items-center gap-1.5">
             <span className="h-[7px] w-[7px] rounded-full bg-ink/30" />

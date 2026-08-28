@@ -197,7 +197,7 @@ export function ChatClient() {
         version={progressVersion}
       />
 
-      <main className="flex min-h-0 flex-col">
+      <main className="flex h-screen min-h-0 flex-col">
         <div className="flex items-center justify-between border-b border-rule px-8 py-[18px]">
           <div className="flex items-center gap-3.5">
             <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-gold to-[color-mix(in_srgb,var(--gold),black_35%)] font-display text-sm font-semibold text-paper">
@@ -226,7 +226,7 @@ export function ChatClient() {
           </div>
         </div>
 
-        <div className="flex flex-1 justify-center overflow-y-auto px-8 py-7">
+        <div className="flex min-h-0 flex-1 justify-center overflow-y-auto px-8 py-7">
           <div className="flex w-full max-w-[700px] flex-col gap-5">
             {messages.length === 0 && (
               <p className="text-sm text-ink/50">Ask a question below to start a session.</p>
