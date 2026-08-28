@@ -140,6 +140,8 @@ async def ask(request: AskRequest, user_id: str = Depends(get_current_user_id)) 
     trace_correctness: str | None = None
     struggle_count_after = tutoring_state["struggle_count"]
     confirm_count_after = tutoring_state["confirm_count"]
+    citation_code: str | None = None
+    citation_framework: str | None = None
 
     if decision.get("safety_blocked"):
         response_phase = tutoring_state["tutoring_phase"]
@@ -165,6 +167,9 @@ async def ask(request: AskRequest, user_id: str = Depends(get_current_user_id)) 
         trace_strategy = decision["strategy"]
         trace_correctness = decision.get("correctness")
         trace_evidence_chunk_ids = [chunk.chunk_id for chunk in decision["evidence"][:3]]
+        if decision["evidence"] and decision["evidence"][0].standard_code:
+            citation_code = decision["evidence"][0].standard_code
+            citation_framework = decision["evidence"][0].framework_name
         struggle_count_after = decision["new_struggle_count"]
         confirm_count_after = decision["new_confirm_count"]
         await update_tutoring_state(
@@ -210,6 +215,12 @@ async def ask(request: AskRequest, user_id: str = Depends(get_current_user_id)) 
     response = StreamingResponse(body, media_type="text/plain")
     response.headers["X-Conversation-Id"] = conversation_id
     response.headers["X-Tutoring-Phase"] = response_phase
+    if trace_strategy:
+        response.headers["X-Tutoring-Strategy"] = trace_strategy
+    if citation_code:
+        response.headers["X-Citation-Code"] = citation_code
+    if citation_framework:
+        response.headers["X-Citation-Framework"] = citation_framework
     return response
 
 

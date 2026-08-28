@@ -39,11 +39,22 @@ async def search_chunks(
             cr.source_url as source_url,
             cr.license as license,
             dc.content as content,
-            1 - (dc.embedding <=> %(embedding)s) as similarity
+            1 - (dc.embedding <=> %(embedding)s) as similarity,
+            std.code as standard_code,
+            fw.name as framework_name
         from document_chunks dc
         join curriculum_resources cr on cr.id = dc.resource_id
         join concepts c on c.id = cr.concept_id
         join subjects s on s.id = c.subject_id
+        left join lateral (
+            select st.code, st.framework_id
+            from concept_standards cst
+            join standards st on st.id = cst.standard_id
+            where cst.concept_id = c.id
+            order by st.code
+            limit 1
+        ) std on true
+        left join curriculum_frameworks fw on fw.id = std.framework_id
         where {filters}
         order by dc.embedding <=> %(embedding)s
         limit %(limit)s
@@ -62,6 +73,8 @@ async def search_chunks(
             license=row["license"],
             content=row["content"],
             similarity=float(row["similarity"]),
+            standard_code=row["standard_code"],
+            framework_name=row["framework_name"],
         )
         for row in rows
     ]

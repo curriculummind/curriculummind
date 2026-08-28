@@ -8,10 +8,32 @@ import { Logo } from "@/components/logo";
 type ChatMessage = {
   role: "student" | "assistant";
   content: string;
+  strategy?: string;
+  citationCode?: string;
+  citationFramework?: string;
 };
 
 const ACCEPTED_UPLOAD_TYPES =
   "image/jpeg,image/png,image/webp,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+/**
+ * The guided-discovery prompt (Decision 015) always separates a stated
+ * anchor from a genuine follow-up question with a blank line -- this
+ * splits on that convention so the question can be styled distinctly,
+ * without needing the backend to return structured output.
+ */
+function splitAnchorAndPrompt(content: string): { anchor: string; prompt: string | null } {
+  const parts = content.split(/\n\s*\n/);
+  const last = parts[parts.length - 1]?.trim();
+  if (parts.length > 1 && last?.endsWith("?")) {
+    return { anchor: parts.slice(0, -1).join("\n\n").trim(), prompt: last };
+  }
+  return { anchor: content, prompt: null };
+}
+
+function shortFrameworkName(name: string): string {
+  return name.split(" State Standards")[0];
+}
 
 /**
  * M0 chat UI with real conversation persistence: messages accumulate
@@ -113,7 +135,16 @@ export function ChatClient() {
       setTutoringPhase(newPhase);
     }
 
-    setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
+    setMessages((prev) => [
+      ...prev,
+      {
+        role: "assistant",
+        content: "",
+        strategy: res.headers.get("X-Tutoring-Strategy") ?? undefined,
+        citationCode: res.headers.get("X-Citation-Code") ?? undefined,
+        citationFramework: res.headers.get("X-Citation-Framework") ?? undefined,
+      },
+    ]);
 
     const reader = res.body?.getReader();
     const decoder = new TextDecoder();
@@ -125,7 +156,7 @@ export function ChatClient() {
       setMessages((prev) => {
         const next = [...prev];
         next[next.length - 1] = {
-          role: "assistant",
+          ...next[next.length - 1],
           content: next[next.length - 1].content + chunk,
         };
         return next;
@@ -188,19 +219,51 @@ export function ChatClient() {
           {messages.length === 0 && (
             <p className="text-sm text-ink/50">Ask a question below to start a session.</p>
           )}
-          {messages.map((message, i) => (
-            <div key={i} className={`flex ${message.role === "student" ? "justify-end" : ""}`}>
-              <div
-                className={
-                  message.role === "student"
-                    ? "max-w-[82%] rounded-tl-lg rounded-tr-sm rounded-bl-lg rounded-br-lg bg-paper-3 px-4 py-3 text-sm text-ink"
-                    : "max-w-full whitespace-pre-wrap text-sm leading-relaxed text-ink/90"
-                }
-              >
-                {message.content}
+          {messages.map((message, i) => {
+            if (message.role === "student") {
+              return (
+                <div key={i} className="flex justify-end">
+                  <div className="max-w-[82%] rounded-tl-lg rounded-tr-sm rounded-bl-lg rounded-br-lg bg-paper-3 px-4 py-3 text-sm text-ink">
+                    {message.content}
+                  </div>
+                </div>
+              );
+            }
+
+            if (message.strategy === "confirm_wrapup") {
+              return (
+                <div
+                  key={i}
+                  className="flex items-start gap-3 rounded-md border border-sage/30 bg-sage/8 px-4 py-3.5 text-sm leading-relaxed text-ink/85"
+                >
+                  <div>
+                    <strong className="mb-1.5 block font-mono text-[0.68rem] tracking-[0.08em] text-sage uppercase">
+                      Confirmed &middot; Wrap-up
+                    </strong>
+                    {message.content}
+                  </div>
+                </div>
+              );
+            }
+
+            const { anchor, prompt } = splitAnchorAndPrompt(message.content);
+            return (
+              <div key={i} className="max-w-full text-sm leading-relaxed text-ink/90">
+                {message.citationCode && (
+                  <span className="mb-2.5 inline-flex items-center gap-1.5 rounded-sm border border-rule px-2 py-1 font-mono text-[0.66rem] text-ink/55">
+                    {message.citationFramework ? shortFrameworkName(message.citationFramework) : "Standard"}
+                    &middot; {message.citationCode}
+                  </span>
+                )}
+                <p className="whitespace-pre-wrap">{anchor}</p>
+                {prompt && (
+                  <p className="mt-2.5 border-l-2 border-gold pl-3.5 font-display text-base text-gold italic">
+                    {prompt}
+                  </p>
+                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         <form onSubmit={handleSubmit} className="border-t border-rule px-6 py-5">

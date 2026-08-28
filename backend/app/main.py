@@ -62,7 +62,13 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["X-Conversation-Id", "X-Tutoring-Phase"],
+    expose_headers=[
+        "X-Conversation-Id",
+        "X-Tutoring-Phase",
+        "X-Tutoring-Strategy",
+        "X-Citation-Code",
+        "X-Citation-Framework",
+    ],
 )
 
 app.include_router(identity_router)

@@ -12,6 +12,8 @@ class RetrievedChunk(BaseModel):
     license: str
     content: str
     similarity: float
+    standard_code: str | None = None
+    framework_name: str | None = None
 
 
 class ConfidenceResult(BaseModel):
