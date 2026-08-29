@@ -85,12 +85,21 @@ export function TopicChart({
   const rows: Row[] = [];
   let y = TOP_PAD;
   modules.forEach((m) => {
-    rows.push({ y, header: `${m.module_number ? `Module ${m.module_number} · ` : ""}${m.name}` });
-    y += MODULE_HEAD_H;
-    m.topics.forEach((t) => {
-      rows.push({ y, topic: t, moduleName: m.name });
+    // Science was ingested one full chapter per concept, so every module
+    // has exactly one topic -- a header followed by a single duplicate-
+    // looking child row reads as redundant. Collapse to one flat row
+    // using the topic's own (more specific) name instead.
+    if (m.topics.length === 1) {
+      rows.push({ y, topic: m.topics[0], moduleName: m.name });
       y += ROW_H;
-    });
+    } else {
+      rows.push({ y, header: `${m.module_number ? `Module ${m.module_number} · ` : ""}${m.name}` });
+      y += MODULE_HEAD_H;
+      m.topics.forEach((t) => {
+        rows.push({ y, topic: t, moduleName: m.name });
+        y += ROW_H;
+      });
+    }
     y += 6;
   });
   const height = y + 6;
