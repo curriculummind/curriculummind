@@ -39,7 +39,6 @@ MASTERY_STREAK = 3
 
 _MODULE_NUMBER = re.compile(r"Module\s+(\d+)")
 _TOPIC_LETTER = re.compile(r"Topic\s+([A-Z]):\s*(.+?)(?:\s*\(Teacher Edition\))?\s*$")
-_SOURCE_PREFIX = re.compile(r"^[\w-]+(?: \d+)?:\s*")
 
 
 def _parse_module_number(title: str) -> int | None:
@@ -54,9 +53,13 @@ def _parse_topic(title: str) -> tuple[str | None, str]:
         return match.group(1), match.group(2)
     # Science resources are one chapter-length resource per concept, titled
     # e.g. "CK-12 Life Science for Middle School: Human Body Systems" --
-    # strip the source-name prefix and use the rest as the topic name.
-    stripped = _SOURCE_PREFIX.sub("", title, count=1)
-    return None, stripped
+    # everything after the first ": " is the actual chapter name. (A
+    # single-token regex prefix match was tried first and silently did
+    # nothing, since the real prefix is a multi-word phrase, not one
+    # token -- caught only because the rendered name still showed the
+    # full "CK-12 Life Science for Middle School: " prefix live.)
+    _, _, rest = title.partition(": ")
+    return None, rest or title
 
 
 def _tier_for(correctness_sequence: list[str]) -> Tier | None:
