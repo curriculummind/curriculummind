@@ -13,12 +13,20 @@ async def search_chunks(
     subject_slug: str,
     grade_band: str,
     concept_slug: str | None = None,
-    limit: int = 8,
+    limit: int = 15,
 ) -> list[RetrievedChunk]:
     """
     Return the top matching chunks for a subject and grade band, ranked
     by cosine similarity. Metadata filters narrow the candidate pool
     before similarity ranking runs, per architecture §15.
+
+    limit was raised from 8 to 15 after finding a real case where the
+    genuinely correct chunk (a basic "for every X there are Y" ratio
+    lesson) ranked 11th, with only ~0.08 separating its similarity
+    score from an irrelevant top match -- similarity alone doesn't
+    cluster the right answer near the top on this corpus, so the
+    per-turn LLM relevance check (Pillar D, graph.py) needs a wide
+    enough candidate pool to actually find it.
     """
     embedding_literal = str(query_embedding)
     filters = "s.slug = %(subject_slug)s and c.grade_band = %(grade_band)s"

@@ -5,13 +5,14 @@ A LangGraph StateGraph replacing the hand-written asyncio.gather/if-else
 chain that used to live in the router: a content-safety check gates the
 entry point (Decision 022, the "safety check" node named in Decision
 006 but never built until now), then retrieval and assignment detection
-run as parallel nodes, a conditional edge routes low-confidence results
-through the relevance fallback (Decision 016), and another classifies
-the student's last answer (Decision 019) before a final node decides
-the generation strategy. Every node wraps an existing, already-tested
-module (retrieval/, assignment.py, correctness.py, escalation.py,
-safety.py) unchanged -- this only changes how they are orchestrated,
-not what any of them do.
+run as parallel nodes, every retrieval result (not just low-confidence
+ones, Pillar D) passes through an LLM relevance check (Decision 016)
+that can move the confidence band in either direction, and another node
+classifies the student's last answer (Decision 019) before a final node
+decides the generation strategy. Every node wraps an existing,
+already-tested module (retrieval/, assignment.py, correctness.py,
+escalation.py, safety.py) unchanged -- this only changes how they are
+orchestrated, not what any of them do.
 
 Generation itself (streaming tokens back to the client) deliberately
 stays outside the graph and runs in the router after it completes: a
@@ -21,6 +22,7 @@ evidence, the assignment flag, and the strategy to generate with" --
 exactly the point Principle 5 draws between deciding and generating.
 """
 
+import asyncio
 from typing import TypedDict
 
 from langgraph.graph import END, StateGraph
@@ -88,12 +90,50 @@ async def _detect_assignment_node(state: TutoringState) -> dict:
     return {"is_assignment": is_assignment}
 
 
+_RELEVANCE_CANDIDATES = 15  # matches search_chunks' default retrieval limit
+
+
 async def _relevance_check_node(state: TutoringState) -> dict:
-    """On a low-confidence result, ask the model directly whether the top candidate actually answers it."""
+    """
+    Ask the model directly whether a retrieved chunk actually supports
+    this turn, regardless of the similarity band -- a short, numeric-
+    only follow-up answer ("3", "8:4") carries no topic keywords of its
+    own, so cosine similarity alone can score confidently against
+    completely unrelated content several turns into a real conversation
+    (Decision 020's known gap, Pillar D). Runs both directions: a low
+    band can be rescued, and a high band that similarity got wrong can
+    be caught before generation ever sees bad evidence. Judges against
+    retrieval_query (recent context + the raw turn), not the bare
+    question, since the raw text of a follow-up answer isn't a question
+    an evidence passage could be judged as "answering" on its own.
+
+    Checks the full retrieved candidate list, not just evidence[0]:
+    similarity scores on this corpus cluster tightly enough that a
+    coincidental lexical false-positive (a Statistics box-plot passage
+    that happens to mention "dogs") can outrank the genuinely relevant
+    chunk. Confirmed empirically on a real "ratio of dogs to cats"
+    question -- the correct passage (Module 1 Topic A, "Lesson 1:
+    Ratios") ranked 11th, with only ~0.08 separating its similarity
+    score from the irrelevant chunk sitting at rank 0; search_chunks'
+    retrieval limit was widened from 8 to 15 for the same reason (see
+    its docstring). Judged concurrently, not sequentially -- checking
+    up to 15 candidates one at a time measured 41s end to end on the
+    case above, unusable for a chat response; firing them together
+    costs the same number of calls but takes roughly as long as one.
+    The highest-ranked relevant candidate found is moved to the front
+    so citation and generation both use it.
+    """
     evidence = state.get("evidence") or []
-    if evidence and await is_actually_relevant(state["question"], evidence[0], state["llm"]):
-        return {"band": "high"}
-    return {}
+    candidates = evidence[:_RELEVANCE_CANDIDATES]
+    if not candidates:
+        return {"band": "low"}
+    judgments = await asyncio.gather(
+        *(is_actually_relevant(state["retrieval_query"], chunk, state["llm"]) for chunk in candidates)
+    )
+    for i, relevant in enumerate(judgments):
+        if relevant:
+            return {"band": "high", "evidence": evidence[i:] + evidence[:i]}
+    return {"band": "low"}
 
 
 async def _classify_correctness_node(state: TutoringState) -> dict:
@@ -130,10 +170,6 @@ def _route_after_safety(state: TutoringState) -> str | list[str]:
     return END if state["safety_blocked"] else ["retrieve", "detect_assignment"]
 
 
-def _route_after_retrieve(state: TutoringState) -> str:
-    return "relevance_check" if state["band"] == "low" else "classify_correctness"
-
-
 def _route_after_relevance_check(state: TutoringState) -> str:
     return "classify_correctness" if state["band"] == "high" else END
 
@@ -152,9 +188,7 @@ def _build_graph():
     graph.set_entry_point("check_safety")
 
     graph.add_conditional_edges("check_safety", _route_after_safety, ["retrieve", "detect_assignment", END])
-    graph.add_conditional_edges(
-        "retrieve", _route_after_retrieve, ["relevance_check", "classify_correctness"]
-    )
+    graph.add_edge("retrieve", "relevance_check")
     graph.add_conditional_edges("relevance_check", _route_after_relevance_check, ["classify_correctness", END])
     graph.add_edge("detect_assignment", END)
     graph.add_edge("classify_correctness", "select_strategy")

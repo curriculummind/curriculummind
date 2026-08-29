@@ -1,14 +1,18 @@
 """
-LLM-based relevance judgment, used when similarity-based confidence is
-low (architecture §16's broaden-or-clarify branch).
+LLM-based relevance judgment (Decision 016, extended by Pillar D to run
+on every turn rather than only low-confidence ones).
 
 Raw cosine similarity alone cannot reliably separate on-topic from
-off-topic queries on a corpus this size: a genuinely on-topic,
-single-concept query ("what is a ribosome") can score lower than a
-genuinely off-topic one whose phrasing happens to overlap lexically
-with the corpus (a baking question scoring above a WWII-date question,
-because the ratios content uses recipe examples). One extra
-classification call resolves cases a pure threshold cannot.
+off-topic queries on a corpus this size, in either direction: a
+genuinely on-topic, single-concept query ("what is a ribosome") can
+score lower than a genuinely off-topic one whose phrasing happens to
+overlap lexically with the corpus (a baking question scoring above a
+WWII-date question, because the ratios content uses recipe examples) --
+and a short, numeric-only follow-up answer deep in a real conversation
+("3", "8:4") can score confidently high against completely unrelated
+content, since it carries no topic keywords of its own. One extra
+classification call, run on every turn, resolves cases a pure
+threshold cannot catch in either direction.
 """
 
 from pydantic import BaseModel
