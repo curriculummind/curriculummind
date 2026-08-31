@@ -287,6 +287,12 @@ export function ChatClient() {
               rows={2}
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  e.currentTarget.form?.requestSubmit();
+                }
+              }}
               disabled={attaching}
               className="w-full rounded border border-rule bg-paper-2 px-3 py-2 text-sm text-ink placeholder:text-ink/40 focus:outline-none focus:ring-1 focus:ring-gold disabled:opacity-50"
             />
