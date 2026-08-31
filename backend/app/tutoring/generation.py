@@ -38,12 +38,25 @@ would.
 {assignment_notice}"""
 
 ASSIGNMENT_NOTICE = """
-This looks like a specific assignment problem, not a general question. Say
-so plainly and briefly. Do not compute or state the final answer or result
-under any circumstances, even if the student asks directly or claims they
-already know it -- walk through only the first step they need to take
-themselves.
+This looks like a specific assignment problem, not a general question. Do
+not compute or state the final answer or result under any circumstances,
+even if the student asks directly or claims they already know it -- walk
+through only the first step they need to take themselves.
 """
+
+# The model was prompted to open by plainly saying this looks like an
+# assignment, but didn't always comply (the same "prompted but not
+# guaranteed" gap seen elsewhere in this pipeline, e.g. Decision 019's
+# explain-prompt adherence). Sent as a deterministic prefix instead of
+# leaving the acknowledgment itself up to the model, so it always
+# appears, worded exactly as intended, regardless of compliance. The
+# behavioral constraint above (never reveal the final answer) stays
+# prompted, since it shapes the model's actual guidance, not just an
+# opening line.
+ASSIGNMENT_ACKNOWLEDGMENT = (
+    "This looks like a specific assignment problem. I won't give you the direct solution, "
+    "but let's work through it together.\n\n"
+)
 
 EXPLAIN_PROMPT = """You are CurriculumMind, a tutor for a Grade {grade_band} student studying {subject}.
 
@@ -127,6 +140,8 @@ async def generate_grounded_response(
     system += STYLE_RULES
     user_message = f"Curriculum evidence:\n\n{_format_evidence(evidence)}\n\nStudent question: {question}"
     messages = [*history, Message(role="user", content=user_message)]
+    if is_assignment and strategy == "guiding":
+        yield ASSIGNMENT_ACKNOWLEDGMENT
     # Prompted not to, but models don't always comply (seen elsewhere in this
     # pipeline, e.g. Decision 019's explain-prompt adherence gap) -- a plain
     # character substitution on each token guarantees it regardless.
