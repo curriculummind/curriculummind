@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { Logo } from "@/components/logo";
 import { SelectedTopic, TopicChart } from "@/components/topic-chart";
 
 type ChatMessage = {
@@ -41,9 +42,8 @@ function shortFrameworkName(name: string): string {
  * reused on every subsequent question so follow-ups actually continue
  * the same dialogue instead of starting fresh each time.
  */
-export function ChatClient() {
+export function ChatClient({ subject }: { subject: string }) {
   const router = useRouter();
-  const [subject, setSubject] = useState("math");
   const [question, setQuestion] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -169,14 +169,6 @@ export function ChatClient() {
     setProgressVersion((v) => v + 1);
   }
 
-  function handleSubjectChange(next: string) {
-    setSubject(next);
-    setMessages([]);
-    setConversationId(null);
-    setTutoringPhase("guiding");
-    setSelectedTopic(null);
-  }
-
   async function handleLogout() {
     const supabase = createClient();
     await supabase.auth.signOut();
@@ -189,13 +181,18 @@ export function ChatClient() {
 
   return (
     <div className="grid h-screen grid-cols-[3fr_7fr]">
-      <TopicChart
-        subject={subject}
-        onSubjectChange={handleSubjectChange}
-        selected={selectedTopic}
-        onSelectTopic={setSelectedTopic}
-        version={progressVersion}
-      />
+      <aside className="flex h-screen flex-col border-r border-rule bg-paper-3">
+        <div className="border-b border-rule px-5 py-4">
+          <div className="mb-3">
+            <Logo />
+          </div>
+          <a href="/home" className="text-xs text-ink/55 hover:text-ink">
+            &larr; Back to home
+          </a>
+        </div>
+        <TopicChart subject={subject} selected={selectedTopic} onSelectTopic={setSelectedTopic} version={progressVersion} />
+        <div className="border-t border-rule px-5 py-3 font-mono text-xs text-ink/45">Grade 6 &middot; Common Core</div>
+      </aside>
 
       <main className="flex h-screen min-h-0 flex-col">
         <div className="flex items-center justify-between border-b border-rule px-8 py-[18px]">

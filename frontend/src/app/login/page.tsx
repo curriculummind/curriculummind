@@ -42,7 +42,7 @@ export default function LoginPage() {
       });
     }
 
-    router.push("/chat");
+    router.push("/home");
     router.refresh();
   }
 

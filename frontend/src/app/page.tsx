@@ -47,7 +47,7 @@ export default async function Home() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (user) redirect("/chat");
+  if (user) redirect("/home");
 
   return (
     <div className="flex min-h-full flex-col">

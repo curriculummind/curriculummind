@@ -26,6 +26,7 @@ from app.tutoring.conversations import (
     append_message,
     create_conversation,
     get_conversation_owner,
+    get_last_subject,
     get_messages,
     get_tutoring_state,
     record_flagged_interaction,
@@ -223,6 +224,13 @@ async def ask(request: AskRequest, user_id: str = Depends(get_current_user_id)) 
     if citation_framework:
         response.headers["X-Citation-Framework"] = citation_framework
     return response
+
+
+@router.get("/last-subject")
+async def last_subject(user_id: str = Depends(get_current_user_id)) -> dict[str, str | None]:
+    """The subject slug of this student's most recently active conversation, for a "continue" shortcut."""
+    pool = get_pool()
+    return {"subject": await get_last_subject(pool, user_id)}
 
 
 @router.get("/progress")

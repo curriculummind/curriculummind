@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { Logo } from "@/components/logo";
 
 type Tier = "mastery" | "learning" | "needs-practice";
 type Topic = { resource_id: string; letter: string | null; name: string; tier: Tier | null };
@@ -38,19 +37,23 @@ export type SelectedTopic = { resourceId: string; moduleName: string; topicName:
  * honest per-topic confidence chart, not an activity count. `version`
  * bumps whenever the chat completes a turn so a fresh correct/incorrect
  * answer shows up here without a manual refresh.
+ *
+ * A plain embeddable panel, not a page shell: no brand header or
+ * subject switcher, since the page composing this now owns that
+ * (a fixed subject per route in /chat/[subject], two side by side in
+ * /progress). `selected`/`onSelectTopic` are optional -- the progress
+ * overview renders this read-only, with nothing to click into.
  */
 export function TopicChart({
   subject,
-  onSubjectChange,
   selected,
   onSelectTopic,
-  version,
+  version = 0,
 }: {
   subject: string;
-  onSubjectChange: (s: string) => void;
-  selected: SelectedTopic | null;
-  onSelectTopic: (topic: SelectedTopic) => void;
-  version: number;
+  selected?: SelectedTopic | null;
+  onSelectTopic?: (topic: SelectedTopic) => void;
+  version?: number;
 }) {
   const [modules, setModules] = useState<Module[]>([]);
   const [loading, setLoading] = useState(true);
@@ -105,129 +108,109 @@ export function TopicChart({
   const height = y + 6;
 
   return (
-    <aside className="flex h-screen flex-col border-r border-rule bg-paper-3">
-      <div className="border-b border-rule px-5 py-4">
-        <div className="mb-4">
-          <Logo />
-        </div>
-        <div className="flex gap-1.5 rounded-md bg-ink/5 p-1">
-          {["math", "science"].map((s) => (
-            <button
-              key={s}
-              onClick={() => onSubjectChange(s)}
-              className={`flex-1 rounded px-0 py-1.5 text-sm font-medium capitalize transition ${
-                subject === s ? "bg-paper-2 text-ink shadow-sm" : "text-ink/55"
-              }`}
-            >
-              {s}
-            </button>
-          ))}
-        </div>
+    <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+      <div className="mb-3.5 flex flex-wrap gap-3 border-b border-rule pb-3.5 font-mono text-[0.66rem] text-ink/55">
+        <span className="flex items-center gap-1.5">
+          <span className="h-[7px] w-[7px] rounded-full bg-ink/30" />
+          Not started
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="h-[7px] w-[7px] rounded-full bg-clay" />
+          Needs practice
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="h-[7px] w-[7px] rounded-full bg-gold" />
+          Learning
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="h-[7px] w-[7px] rounded-full bg-sage" />
+          Mastery
+        </span>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-        <div className="mb-3.5 flex flex-wrap gap-3 border-b border-rule pb-3.5 font-mono text-[0.66rem] text-ink/55">
-          <span className="flex items-center gap-1.5">
-            <span className="h-[7px] w-[7px] rounded-full bg-ink/30" />
-            Not started
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="h-[7px] w-[7px] rounded-full bg-clay" />
-            Needs practice
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="h-[7px] w-[7px] rounded-full bg-gold" />
-            Learning
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="h-[7px] w-[7px] rounded-full bg-sage" />
-            Mastery
-          </span>
-        </div>
+      {loading ? (
+        <p className="text-sm text-ink/45">Loading topics&hellip;</p>
+      ) : (
+        <svg viewBox={`0 0 ${CHART_W} ${height}`} className="block h-auto w-full">
+          {[0, 1, 2, 3].map((i) => {
+            const x = LABEL_W + ((CHART_W - RIGHT_PAD - LABEL_W) * (i + 0.5)) / 4;
+            return (
+              <line
+                key={i}
+                x1={x}
+                y1={TOP_PAD}
+                x2={x}
+                y2={height - 6}
+                stroke="rgba(28,34,48,0.08)"
+                strokeDasharray="2,3"
+              />
+            );
+          })}
 
-        {loading ? (
-          <p className="text-sm text-ink/45">Loading topics&hellip;</p>
-        ) : (
-          <svg viewBox={`0 0 ${CHART_W} ${height}`} className="block h-auto w-full">
-            {[0, 1, 2, 3].map((i) => {
-              const x = LABEL_W + ((CHART_W - RIGHT_PAD - LABEL_W) * (i + 0.5)) / 4;
+          {rows.map((row, i) => {
+            if (row.header) {
+              const text = truncate(row.header.toUpperCase(), 40);
               return (
-                <line
+                <text
                   key={i}
-                  x1={x}
-                  y1={TOP_PAD}
-                  x2={x}
-                  y2={height - 6}
-                  stroke="rgba(28,34,48,0.08)"
-                  strokeDasharray="2,3"
-                />
-              );
-            })}
-
-            {rows.map((row, i) => {
-              if (row.header) {
-                const text = truncate(row.header.toUpperCase(), 40);
-                return (
-                  <text
-                    key={i}
-                    x={0}
-                    y={row.y + 16}
-                    fontFamily="var(--font-mono)"
-                    fontSize="9.5"
-                    letterSpacing="0.04em"
-                    fill="rgba(28,34,48,0.5)"
-                  >
-                    <title>{row.header}</title>
-                    {text}
-                  </text>
-                );
-              }
-
-              const t = row.topic!;
-              const cy = row.y + ROW_H / 2 + 2;
-              const dotX = colX(t.tier);
-              const color = t.tier ? TIER_COLOR[t.tier] : "rgba(28,34,48,0.3)";
-              const fullLabel = `${t.letter ? `${t.letter}. ` : ""}${t.name}`;
-              const active = selected?.resourceId === t.resource_id;
-
-              return (
-                <g
-                  key={t.resource_id}
-                  className="cursor-pointer"
-                  onClick={() =>
-                    onSelectTopic({ resourceId: t.resource_id, moduleName: row.moduleName!, topicName: t.name })
-                  }
+                  x={0}
+                  y={row.y + 16}
+                  fontFamily="var(--font-mono)"
+                  fontSize="9.5"
+                  letterSpacing="0.04em"
+                  fill="rgba(28,34,48,0.5)"
                 >
-                  <rect
-                    x={0}
-                    y={row.y - 1}
-                    width={CHART_W}
-                    height={ROW_H}
-                    fill={active ? "var(--paper-2)" : "transparent"}
-                    rx={4}
-                  />
-                  {active && <rect x={0} y={row.y - 1} width={3} height={ROW_H} fill="var(--gold)" />}
-                  <text
-                    x={10}
-                    y={cy + 3}
-                    fontFamily="var(--font-sans)"
-                    fontSize="10.5"
-                    fontWeight={active ? 600 : 400}
-                    fill="var(--ink)"
-                  >
-                    <title>{fullLabel}</title>
-                    {truncate(fullLabel, 24)}
-                  </text>
-                  <line x1={LABEL_W} y1={cy} x2={dotX} y2={cy} stroke={color} strokeOpacity="0.35" />
-                  <circle cx={dotX} cy={cy} r={t.tier ? 4 : 3} fill={color} />
-                </g>
+                  <title>{row.header}</title>
+                  {text}
+                </text>
               );
-            })}
-          </svg>
-        )}
-      </div>
+            }
 
-      <div className="border-t border-rule px-5 py-3 font-mono text-xs text-ink/45">Grade 6 &middot; Common Core</div>
-    </aside>
+            const t = row.topic!;
+            const cy = row.y + ROW_H / 2 + 2;
+            const dotX = colX(t.tier);
+            const color = t.tier ? TIER_COLOR[t.tier] : "rgba(28,34,48,0.3)";
+            const fullLabel = `${t.letter ? `${t.letter}. ` : ""}${t.name}`;
+            const active = selected?.resourceId === t.resource_id;
+            const clickable = Boolean(onSelectTopic);
+
+            return (
+              <g
+                key={t.resource_id}
+                className={clickable ? "cursor-pointer" : undefined}
+                onClick={
+                  clickable
+                    ? () => onSelectTopic!({ resourceId: t.resource_id, moduleName: row.moduleName!, topicName: t.name })
+                    : undefined
+                }
+              >
+                <rect
+                  x={0}
+                  y={row.y - 1}
+                  width={CHART_W}
+                  height={ROW_H}
+                  fill={active ? "var(--paper-2)" : "transparent"}
+                  rx={4}
+                />
+                {active && <rect x={0} y={row.y - 1} width={3} height={ROW_H} fill="var(--gold)" />}
+                <text
+                  x={10}
+                  y={cy + 3}
+                  fontFamily="var(--font-sans)"
+                  fontSize="10.5"
+                  fontWeight={active ? 600 : 400}
+                  fill="var(--ink)"
+                >
+                  <title>{fullLabel}</title>
+                  {truncate(fullLabel, 24)}
+                </text>
+                <line x1={LABEL_W} y1={cy} x2={dotX} y2={cy} stroke={color} strokeOpacity="0.35" />
+                <circle cx={dotX} cy={cy} r={t.tier ? 4 : 3} fill={color} />
+              </g>
+            );
+          })}
+        </svg>
+      )}
+    </div>
   );
 }

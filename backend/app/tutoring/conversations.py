@@ -35,6 +35,25 @@ async def create_conversation(pool: AsyncConnectionPool, student_id: str, subjec
     return str(row["id"])
 
 
+async def get_last_subject(pool: AsyncConnectionPool, student_id: str) -> str | None:
+    """Return the subject slug of a student's most recently active conversation, or None if they have none."""
+    async with pool.connection() as conn:
+        async with conn.cursor(row_factory=dict_row) as cur:
+            await cur.execute(
+                """
+                select s.slug
+                from conversations c
+                join subjects s on s.id = c.subject_id
+                where c.student_id = %s
+                order by c.updated_at desc
+                limit 1
+                """,
+                (student_id,),
+            )
+            row = await cur.fetchone()
+    return row["slug"] if row else None
+
+
 async def get_conversation_owner(pool: AsyncConnectionPool, conversation_id: str) -> str | None:
     """Return a conversation's student_id, or None if the conversation doesn't exist."""
     async with pool.connection() as conn:
