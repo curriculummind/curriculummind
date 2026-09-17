@@ -34,7 +34,7 @@ from app.tutoring.conversations import (
 )
 from app.tutoring.generation import generate_grounded_response
 from app.tutoring.graph import run_tutoring_pipeline
-from app.tutoring.progress import Module, get_topic_progress
+from app.tutoring.progress import MasteryPoint, Module, get_mastery_curve, get_topic_progress
 from app.tutoring.safety import SENSITIVE_NO_EVIDENCE_MESSAGE, response_for
 from app.observability.traces import record_decision_trace
 
@@ -241,6 +241,16 @@ async def progress(
     pool = get_pool()
     modules = await get_topic_progress(pool, user_id, subject_slug=subject, grade_band=grade_band)
     return {"modules": modules}
+
+
+@router.get("/mastery-curve")
+async def mastery_curve(
+    subject: str, grade_band: str = "6", user_id: str = Depends(get_current_user_id)
+) -> dict[str, list[MasteryPoint]]:
+    """Cumulative count of topics mastered over time in a subject, for the cross-subject progress curve."""
+    pool = get_pool()
+    points = await get_mastery_curve(pool, user_id, subject_slug=subject, grade_band=grade_band)
+    return {"points": points}
 
 
 @router.post("/transcribe")

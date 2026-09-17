@@ -27,6 +27,7 @@ later to re-test retention.
 """
 
 import re
+from datetime import datetime
 from typing import Literal
 
 from psycopg.rows import dict_row
@@ -76,6 +77,19 @@ def _tier_for(correctness_sequence: list[str]) -> Tier | None:
     return "mastery" if streak >= MASTERY_STREAK else "learning"
 
 
+def _mastery_achieved_at(rows: list[tuple[datetime, str]]) -> datetime | None:
+    """The timestamp of the first moment a topic's trailing streak first reached MASTERY_STREAK, chronologically."""
+    streak = 0
+    for created_at, correctness in rows:
+        if correctness == "correct":
+            streak += 1
+            if streak >= MASTERY_STREAK:
+                return created_at
+        else:
+            streak = 0
+    return None
+
+
 class Topic(BaseModel):
     resource_id: str
     letter: str | None
@@ -90,38 +104,61 @@ class Module(BaseModel):
     topics: list[Topic]
 
 
+class MasteryPoint(BaseModel):
+    date: str
+    mastered: int
+
+
+_SHARED_QUERY = """
+    select
+        c.id as concept_id,
+        c.name as module_name,
+        cr.id as resource_id,
+        cr.title,
+        dt.correctness,
+        dt.created_at
+    from curriculum_resources cr
+    join concepts c on c.id = cr.concept_id
+    join subjects s on s.id = c.subject_id
+    left join lateral (
+        select dt2.correctness, dt2.created_at
+        from decision_traces dt2
+        where dt2.correctness is not null
+            and dt2.student_id = %(student_id)s
+            and exists (
+                select 1 from document_chunks dc2
+                where dc2.id = any(dt2.evidence_chunk_ids) and dc2.resource_id = cr.id
+            )
+    ) dt on true
+    where s.slug = %(subject_slug)s and c.grade_band = %(grade_band)s
+    order by c.name, cr.title, dt.created_at asc
+"""
+
+
+async def _fetch_rows(
+    pool: AsyncConnectionPool, student_id: str, *, subject_slug: str, grade_band: str
+) -> list[dict]:
+    """
+    Raw per-attempt rows for every topic in a subject/grade band: one row per
+    resolved (correctness is not null) decision_traces match, or one
+    placeholder row with a null correctness for a topic with no attempts yet.
+    Shared by get_topic_progress and get_mastery_curve so the join (and its
+    duplicate-counting fix -- EXISTS, not JOIN, since a turn's evidence can
+    span multiple chunks in the same resource) lives in exactly one place.
+    """
+    async with pool.connection() as conn:
+        async with conn.cursor(row_factory=dict_row) as cur:
+            await cur.execute(
+                _SHARED_QUERY, {"student_id": student_id, "subject_slug": subject_slug, "grade_band": grade_band}
+            )
+            return await cur.fetchall()
+
+
 async def get_topic_progress(
     pool: AsyncConnectionPool, student_id: str, *, subject_slug: str, grade_band: str
 ) -> list[Module]:
     """Every topic in a subject/grade band, with this student's current mastery tier on each."""
-    query = """
-        select
-            c.id as concept_id,
-            c.name as module_name,
-            cr.id as resource_id,
-            cr.title,
-            dt.correctness,
-            dt.created_at
-        from curriculum_resources cr
-        join concepts c on c.id = cr.concept_id
-        join subjects s on s.id = c.subject_id
-        left join lateral (
-            select dt2.correctness, dt2.created_at
-            from decision_traces dt2
-            where dt2.correctness is not null
-                and dt2.student_id = %(student_id)s
-                and exists (
-                    select 1 from document_chunks dc2
-                    where dc2.id = any(dt2.evidence_chunk_ids) and dc2.resource_id = cr.id
-                )
-        ) dt on true
-        where s.slug = %(subject_slug)s and c.grade_band = %(grade_band)s
-        order by c.name, cr.title, dt.created_at asc
-    """
-    async with pool.connection() as conn:
-        async with conn.cursor(row_factory=dict_row) as cur:
-            await cur.execute(query, {"student_id": student_id, "subject_slug": subject_slug, "grade_band": grade_band})
-            rows = await cur.fetchall()
+    rows = await _fetch_rows(pool, student_id, subject_slug=subject_slug, grade_band=grade_band)
 
     modules: dict[str, Module] = {}
     sequences: dict[str, list[str]] = {}
@@ -150,3 +187,29 @@ async def get_topic_progress(
         )
 
     return sorted(modules.values(), key=lambda m: (m.module_number is None, m.module_number or 0, m.name))
+
+
+async def get_mastery_curve(
+    pool: AsyncConnectionPool, student_id: str, *, subject_slug: str, grade_band: str
+) -> list[MasteryPoint]:
+    """
+    Cumulative count of topics that have reached mastery, over time, for a
+    subject -- a growth curve comparable across subjects, not a per-topic
+    snapshot. A topic's contribution is the moment its streak *first*
+    reached MASTERY_STREAK, not its current tier, so the curve reflects
+    when mastery was actually achieved even if a later wrong answer has
+    since dropped the topic's live tier back down.
+    """
+    rows = await _fetch_rows(pool, student_id, subject_slug=subject_slug, grade_band=grade_band)
+
+    per_resource: dict[str, list[tuple[datetime, str]]] = {}
+    for row in rows:
+        if row["correctness"] is None:
+            continue
+        per_resource.setdefault(str(row["resource_id"]), []).append((row["created_at"], row["correctness"]))
+
+    mastery_dates = sorted(d for d in (_mastery_achieved_at(seq) for seq in per_resource.values()) if d is not None)
+    if not mastery_dates:
+        return []
+
+    return [MasteryPoint(date=date.date().isoformat(), mastered=i + 1) for i, date in enumerate(mastery_dates)]

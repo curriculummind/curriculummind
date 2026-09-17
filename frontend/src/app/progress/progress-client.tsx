@@ -1,6 +1,7 @@
 "use client";
 
 import { Logo } from "@/components/logo";
+import { MasteryCurveChart } from "@/components/mastery-curve-chart";
 import { TopicChart } from "@/components/topic-chart";
 
 /** Combined cross-subject mastery overview -- Math and Science side by side, read-only (no chat here). */
@@ -16,6 +17,12 @@ export function ProgressClient() {
 
       <h1 className="mb-1 font-display text-2xl font-medium text-ink">Your progress</h1>
       <p className="mb-8 text-sm text-ink/60">Every topic across both subjects, plotted against your mastery tier.</p>
+
+      <div className="mb-8 rounded-lg border border-rule bg-paper-2 p-6">
+        <h2 className="mb-1 font-display text-lg font-medium text-ink">Growth over time</h2>
+        <p className="mb-5 text-sm text-ink/60">Topics mastered in each subject, cumulative.</p>
+        <MasteryCurveChart />
+      </div>
 
       <div className="grid gap-6 md:grid-cols-2">
         <div className="flex flex-col overflow-hidden rounded-lg border border-rule bg-paper-3">

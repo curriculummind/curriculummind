@@ -1,6 +1,8 @@
-"""Unit tests for per-topic mastery tier classification."""
+"""Unit tests for per-topic mastery tier classification and the mastery curve."""
 
-from app.tutoring.progress import _tier_for
+from datetime import datetime
+
+from app.tutoring.progress import _mastery_achieved_at, _tier_for
 
 
 def test_no_attempts_is_not_started() -> None:
@@ -36,3 +38,32 @@ def test_most_recent_incorrect_is_needs_practice_regardless_of_history() -> None
 def test_most_recent_unclear_is_needs_practice() -> None:
     """An unclear (non-answer) response is treated the same as incorrect, not ignored."""
     assert _tier_for(["correct", "unclear"]) == "needs-practice"
+
+
+def _dt(day: int) -> datetime:
+    return datetime(2026, 9, day)
+
+
+def test_mastery_achieved_at_returns_none_when_never_reached() -> None:
+    """A topic that never hits a 3-streak contributes nothing to the curve."""
+    rows = [(_dt(1), "correct"), (_dt(2), "correct"), (_dt(3), "incorrect")]
+    assert _mastery_achieved_at(rows) is None
+
+
+def test_mastery_achieved_at_returns_the_third_consecutive_correct_date() -> None:
+    """The curve should credit the moment mastery was first reached, not the most recent answer."""
+    rows = [(_dt(1), "correct"), (_dt(2), "correct"), (_dt(3), "correct"), (_dt(10), "incorrect")]
+    assert _mastery_achieved_at(rows) == _dt(3)
+
+
+def test_mastery_achieved_at_ignores_a_broken_earlier_streak() -> None:
+    """Two correct, a miss, then three more correct: mastery lands on the second streak's third answer."""
+    rows = [
+        (_dt(1), "correct"),
+        (_dt(2), "correct"),
+        (_dt(3), "incorrect"),
+        (_dt(4), "correct"),
+        (_dt(5), "correct"),
+        (_dt(6), "correct"),
+    ]
+    assert _mastery_achieved_at(rows) == _dt(6)

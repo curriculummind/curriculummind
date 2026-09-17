@@ -99,7 +99,7 @@ export function HomeClient() {
           className="flex items-center justify-between rounded-lg border border-rule bg-paper-2 p-6 transition hover:border-gold/40 hover:shadow-[0_18px_40px_-28px_rgba(28,34,48,0.3)]"
         >
           <div>
-            <h3 className="mb-1.5 font-display text-xl font-medium text-ink">See how you&rsquo;re doing</h3>
+            <h3 className="mb-1.5 font-display text-xl font-medium text-ink">Progress Dashboard</h3>
             <p className="text-sm leading-relaxed text-ink/60">
               A mastery overview across both Math and Science, topic by topic.
             </p>
