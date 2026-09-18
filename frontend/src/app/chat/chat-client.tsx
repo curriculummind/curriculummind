@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Logo } from "@/components/logo";
@@ -37,10 +37,12 @@ function shortFrameworkName(name: string): string {
 }
 
 /**
- * M0 chat UI with real conversation persistence: messages accumulate
- * into a thread, and the conversation id returned by the backend is
- * reused on every subsequent question so follow-ups actually continue
- * the same dialogue instead of starting fresh each time.
+ * M0 chat UI with real conversation persistence: on mount, the student's
+ * ongoing conversation for this subject (if any) is fetched and the
+ * thread is resumed -- one continuous conversation per subject, not a
+ * fresh blank one on every visit. The conversation id is then reused on
+ * every subsequent question so follow-ups actually continue the same
+ * dialogue.
  */
 export function ChatClient({ subject }: { subject: string }) {
   const router = useRouter();
@@ -53,7 +55,43 @@ export function ChatClient({ subject }: { subject: string }) {
   const [attachError, setAttachError] = useState<string | null>(null);
   const [selectedTopic, setSelectedTopic] = useState<SelectedTopic | null>(null);
   const [progressVersion, setProgressVersion] = useState(0);
+  const [historyLoading, setHistoryLoading] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadHistory() {
+      const supabase = createClient();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      if (!session) {
+        router.push("/login");
+        return;
+      }
+
+      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/tutor/conversation?subject=${subject}`, {
+        headers: { Authorization: `Bearer ${session.access_token}` },
+      });
+      if (!res.ok || cancelled) {
+        if (!cancelled) setHistoryLoading(false);
+        return;
+      }
+
+      const data = await res.json();
+      if (cancelled) return;
+      setConversationId(data.conversation_id);
+      setMessages(data.messages);
+      setTutoringPhase(data.tutoring_phase);
+      setHistoryLoading(false);
+    }
+    loadHistory();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [subject]);
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -225,7 +263,10 @@ export function ChatClient({ subject }: { subject: string }) {
 
         <div className="flex min-h-0 flex-1 justify-center overflow-y-auto px-8 py-7">
           <div className="flex w-full max-w-[700px] flex-col gap-5">
-            {messages.length === 0 && (
+            {historyLoading && messages.length === 0 && (
+              <p className="text-sm text-ink/45">Loading your conversation&hellip;</p>
+            )}
+            {!historyLoading && messages.length === 0 && (
               <p className="text-sm text-ink/50">Ask a question below to start a session.</p>
             )}
             {messages.map((message, i) => {

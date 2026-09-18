@@ -27,6 +27,7 @@ from app.tutoring.conversations import (
     create_conversation,
     get_conversation_owner,
     get_last_subject,
+    get_latest_conversation,
     get_messages,
     get_tutoring_state,
     record_flagged_interaction,
@@ -231,6 +232,38 @@ async def last_subject(user_id: str = Depends(get_current_user_id)) -> dict[str,
     """The subject slug of this student's most recently active conversation, for a "continue" shortcut."""
     pool = get_pool()
     return {"subject": await get_last_subject(pool, user_id)}
+
+
+class ConversationMessage(BaseModel):
+    role: str
+    content: str
+
+
+class ConversationResponse(BaseModel):
+    conversation_id: str | None
+    messages: list[ConversationMessage]
+    tutoring_phase: str
+
+
+@router.get("/conversation")
+async def conversation(subject: str, user_id: str = Depends(get_current_user_id)) -> ConversationResponse:
+    """
+    A student's ongoing conversation in a subject: its id and full message
+    history, so the chat screen can resume the same thread on every visit
+    instead of silently starting a new, blank one each time.
+    """
+    pool = get_pool()
+    conversation_id = await get_latest_conversation(pool, user_id, subject)
+    if conversation_id is None:
+        return ConversationResponse(conversation_id=None, messages=[], tutoring_phase="guiding")
+
+    messages = await get_messages(pool, conversation_id)
+    state = await get_tutoring_state(pool, conversation_id)
+    return ConversationResponse(
+        conversation_id=conversation_id,
+        messages=[ConversationMessage(**m) for m in messages],
+        tutoring_phase=state["tutoring_phase"],
+    )
 
 
 @router.get("/progress")
