@@ -14,6 +14,7 @@ from starlette.types import ASGIApp
 
 from app.config import get_settings
 from app.db import get_pool
+from app.evaluation.router import router as evaluation_router
 from app.identity.router import router as identity_router
 from app.tutoring.router import router as tutoring_router
 
@@ -73,6 +74,7 @@ app.add_middleware(
 
 app.include_router(identity_router)
 app.include_router(tutoring_router)
+app.include_router(evaluation_router)
 
 
 @app.get("/health")

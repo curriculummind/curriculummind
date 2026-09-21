@@ -11,7 +11,7 @@ this route is left with conversation lifecycle, running that graph,
 and streaming/persisting the generated response.
 """
 
-from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -33,6 +33,7 @@ from app.tutoring.conversations import (
     record_flagged_interaction,
     update_tutoring_state,
 )
+from app.evaluation.notifications import detect_and_record_notifications
 from app.tutoring.generation import generate_grounded_response
 from app.tutoring.graph import run_tutoring_pipeline
 from app.tutoring.progress import MasteryPoint, Module, get_mastery_curve, get_topic_progress
@@ -76,7 +77,9 @@ class AskRequest(BaseModel):
 
 
 @router.post("/ask")
-async def ask(request: AskRequest, user_id: str = Depends(get_current_user_id)) -> StreamingResponse:
+async def ask(
+    request: AskRequest, background_tasks: BackgroundTasks, user_id: str = Depends(get_current_user_id)
+) -> StreamingResponse:
     """Load conversation history, retrieve evidence, and stream a response, persisting both turns."""
     pool = get_pool()
     settings = get_settings()
@@ -215,7 +218,14 @@ async def ask(request: AskRequest, user_id: str = Depends(get_current_user_id)) 
         confirm_count_after=confirm_count_after,
     )
 
+    background_tasks.add_task(detect_and_record_notifications, pool, user_id)
+
     response = StreamingResponse(body, media_type="text/plain")
+    # A handler that builds its own Response object (rather than letting
+    # FastAPI construct one from a plain return value) does not get its
+    # injected BackgroundTasks auto-attached -- this has to be set
+    # explicitly or the task above silently never runs.
+    response.background = background_tasks
     response.headers["X-Conversation-Id"] = conversation_id
     response.headers["X-Tutoring-Phase"] = response_phase
     if trace_strategy:

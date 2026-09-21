@@ -29,20 +29,37 @@ export default function LoginPage() {
 
     // Covers the case where signup required email confirmation, so the
     // profile was never created at signup time -- this is the first
-    // point a confirmed user has a usable session.
+    // point a confirmed user has a usable session. The role/class_code
+    // the user actually chose at signup survives in user_metadata
+    // (set via signUp's options.data); falling back to "student" with
+    // no class_code only happens for accounts created before this
+    // metadata was captured.
     const token = data.session.access_token;
+    let role: string = "student";
     const existing = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/profile/me`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (existing.status === 404) {
-      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/profile`, {
+      const meta = data.user.user_metadata ?? {};
+      role = meta.role ?? "student";
+      const created = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/profile`, {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ role: "student", display_name: email.split("@")[0], grade_level: 6 }),
+        body: JSON.stringify({
+          role,
+          display_name: meta.display_name ?? email.split("@")[0],
+          grade_level: meta.grade_level ?? 6,
+          class_code: role === "student" ? meta.class_code : undefined,
+        }),
       });
+      const profile = await created.json().catch(() => null);
+      role = profile?.role ?? role;
+    } else {
+      const profile = await existing.json();
+      role = profile.role;
     }
 
-    router.push("/home");
+    router.push(role === "teacher" ? "/teacher" : "/home");
     router.refresh();
   }
 

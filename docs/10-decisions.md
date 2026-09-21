@@ -482,3 +482,46 @@ This is Pillar C, Option S from the post-proposal-gap-analysis roadmap: "no new 
 * New table `decision_traces` (conversation, student, question, safety_category, band, strategy, is_assignment, evidence_chunk_ids, correctness, tutoring_phase_before/after, struggle_count_before/after, confirm_count_before/after, timestamp). No select or insert policy exists for it at all -- stricter than `flagged_interactions`, which at least lets the student read their own rows.
 * The three response branches populate the trace differently since the graph short-circuits before running every node: a safety-blocked turn never ran retrieval or assignment detection, so `band`, `strategy`, `is_assignment`, `correctness`, and evidence are all `None`/empty; a low-confidence turn ran assignment detection in parallel with retrieval so `is_assignment` is populated but there's no evidence or strategy; only a normal high-confidence turn populates every field, including the actual chunk IDs passed to generation.
 * Full pytest suite passes unchanged (29 tests -- this is pure persistence, no new branching logic to unit-test). Verified live against the real running backend and a real, disposable Supabase auth user (created via the admin API, deleted afterward along with its cascaded profile/conversation/trace rows): sent one crisis question, one off-topic question, and one real "what is a ratio?" question, then queried `decision_traces` directly and confirmed all three rows had exactly the expected field values for their branch -- including the normal-path row carrying its three real evidence chunk UUIDs and `strategy: guiding`.
+
+---
+
+# Decision 024
+
+**Date:** 2026-09-21
+
+## Decision
+
+A guardian links to a student through a teacher-issued class code, not the parent-invite-by-email flow originally discussed for Pillar B-L. `profiles.class_code` is a unique column, generated server-side for a teacher at signup and enforced by a database check constraint to exist only for teacher rows. A student redeeming one at their own signup gets their `profiles` row and the resulting `guardian_links` row inserted in the same transaction as one another -- a bad code creates nothing at all.
+
+## Reason
+
+A parent-invite-by-email flow needs real email deliverability (a transactional email provider, domain verification, DNS records) that this project has not built and isn't ready to commit to yet. A classroom pilot gets institutional adult oversight "for free" through the teacher relationship, without needing to solve that delivery problem first. `guardian_links` was already schema-generic over guardian/teacher (Decision 009 named both), so this doesn't add a new table or a new access model -- it just supplies the first real way to populate a table that has existed, unused, since the initial migration. Parent-invite is deferred, not abandoned; it can be added later as a second way to populate the same `guardian_links` table without changing this one.
+
+## Impact
+
+* New migration: `profiles.class_code` (unique, nullable, `check ((role = 'teacher') = (class_code is not null))`). No new RLS policy -- the existing owner-only `profiles` policies already cover the column.
+* `ProfileCreate` gained validation: `class_code` is required (and normalized to uppercase) for `role: "student"`, forbidden for `teacher`/`guardian`.
+* Signup's email-confirmation path now carries `role`/`display_name`/`grade_level`/`class_code` through Supabase Auth's `user_metadata`, since the login page's deferred profile-creation fallback previously hardcoded `role: "student"` -- safe when only students existed, not once teachers do.
+* Verified live: a wrong class code returns `400` with no profile row created at all; the real code returns `201` and exactly one `guardian_links` row (`status: 'active'`).
+
+---
+
+# Decision 025
+
+**Date:** 2026-09-21
+
+## Decision
+
+Guardian-facing notifications (mastery milestone, repeated struggle, assignment-leaning pattern, sensitive-topic notice) are computed event-driven, in-process, via a FastAPI `BackgroundTask` scheduled at the end of `/tutor/ask` -- not a separate worker process, and not email. A fifth type shown in the original mockup, a weekly digest, is deferred along with email entirely.
+
+## Reason
+
+Decision 007 already established that an alert should fire from a deterministic threshold over accumulated evidence, not an LLM's in-the-moment judgment -- this satisfies that without requiring new deploy infrastructure. No background worker process exists anywhere in this codebase yet (`app/evaluation/__init__.py` was, until now, only an aspirational docstring); standing one up now, before there's a second reason to need one, would be scope well beyond what this feature requires. A weekly digest is inherently calendar-driven, not event-driven, and needs a scheduler either way -- deferred together with email rather than half-built now.
+
+## Impact
+
+* New table `notifications` (student_id, category, message, timestamp), admin-write / guardian-read RLS -- same posture as `decision_traces`, gated on an *active* `guardian_links` row so a revoked link stops seeing new alerts.
+* Crossing detection (exactly 3, not >=) in `app/evaluation/notifications.py`, so a sustained streak doesn't re-fire the same alert every subsequent turn; a `sensitive_topic`-category hit fires immediately every time with no streak, since a single occurrence is inherently notable on its own.
+* All five of Decision 022's safety categories map to the single `sensitive_topic` notifications category (for icon/styling), but message wording is written per actual category -- a `crisis` flag reads noticeably more urgent than an ordinary `sensitive_topic` hit, deliberately not treated the same.
+* Because `/tutor/ask` returns a hand-built `StreamingResponse` rather than a plain return value, `BackgroundTasks` is not auto-attached by FastAPI and must be assigned to `response.background` explicitly -- confirmed live, not just assumed, since a silent miss here would mean the feature never fires at all.
+* New router `app/evaluation/router.py` (`/guardian/roster`, `/guardian/students/{id}/progress`, `/guardian/students/{id}/mastery-curve`, `/guardian/notifications`), reusing `get_topic_progress`/`get_mastery_curve` from `app/tutoring/progress.py` directly rather than re-deriving the mastery computation for a second audience.

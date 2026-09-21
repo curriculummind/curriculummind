@@ -40,14 +40,25 @@ function StudentBubble({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** Sends signed-in students straight to the chat page; everyone else sees the marketing landing page. */
+/** Sends a signed-in user to their role's home screen; everyone else sees the marketing landing page. */
 export default async function Home() {
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (user) redirect("/home");
+  if (user) {
+    const {
+      data: { session },
+    } = await supabase.auth.getSession();
+    const res = session
+      ? await fetch(`${process.env.NEXT_PUBLIC_API_URL}/profile/me`, {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        }).catch(() => null)
+      : null;
+    const profile = res?.ok ? await res.json() : null;
+    redirect(profile?.role === "teacher" ? "/teacher" : "/home");
+  }
 
   return (
     <div className="flex min-h-full flex-col">

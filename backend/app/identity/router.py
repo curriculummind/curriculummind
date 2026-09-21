@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from app.db import get_pool
 from app.identity.auth import get_current_user_id
 from app.identity.models import Profile, ProfileCreate
-from app.identity.profiles import create_profile, get_profile
+from app.identity.profiles import create_profile, get_profile, get_teacher_id_by_class_code
 
 router = APIRouter(prefix="/profile", tags=["identity"])
 
@@ -16,6 +16,16 @@ async def create_my_profile(data: ProfileCreate, user_id: str = Depends(get_curr
     pool = get_pool()
     if await get_profile(pool, user_id) is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="profile already exists")
+
+    if data.role == "student":
+        teacher_id = await get_teacher_id_by_class_code(pool, data.class_code)
+        if teacher_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="That class code doesn't match a teacher. Check it and try again.",
+            )
+        return await create_profile(pool, user_id, data, teacher_id=teacher_id)
+
     return await create_profile(pool, user_id, data)
 
 

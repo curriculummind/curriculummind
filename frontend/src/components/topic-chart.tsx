@@ -49,11 +49,14 @@ export function TopicChart({
   selected,
   onSelectTopic,
   version = 0,
+  studentId,
 }: {
   subject: string;
   selected?: SelectedTopic | null;
   onSelectTopic?: (topic: SelectedTopic) => void;
   version?: number;
+  /** When set, fetches a linked student's progress (guardian view) instead of the caller's own. */
+  studentId?: string;
 }) {
   const [modules, setModules] = useState<Module[]>([]);
   const [loading, setLoading] = useState(true);
@@ -67,10 +70,10 @@ export function TopicChart({
       } = await supabase.auth.getSession();
       if (!session) return;
 
-      const res = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/tutor/progress?subject=${subject}&grade_band=6`,
-        { headers: { Authorization: `Bearer ${session.access_token}` } }
-      );
+      const endpoint = studentId
+        ? `${process.env.NEXT_PUBLIC_API_URL}/guardian/students/${studentId}/progress?subject=${subject}&grade_band=6`
+        : `${process.env.NEXT_PUBLIC_API_URL}/tutor/progress?subject=${subject}&grade_band=6`;
+      const res = await fetch(endpoint, { headers: { Authorization: `Bearer ${session.access_token}` } });
       if (!res.ok || cancelled) return;
       const data = await res.json();
       if (!cancelled) {
@@ -82,7 +85,7 @@ export function TopicChart({
     return () => {
       cancelled = true;
     };
-  }, [subject, version]);
+  }, [subject, version, studentId]);
 
   type Row = { y: number; header?: string; topic?: Topic; moduleName?: string };
   const rows: Row[] = [];

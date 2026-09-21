@@ -27,7 +27,7 @@ function formatDate(ms: number): string {
  * crossed the mastery threshold (backend: get_mastery_curve), so the line
  * only ever goes up, even if a topic's live tier later drops.
  */
-export function MasteryCurveChart() {
+export function MasteryCurveChart({ studentId }: { studentId?: string } = {}) {
   const [curves, setCurves] = useState<Record<string, Point[]> | null>(null);
 
   useEffect(() => {
@@ -41,10 +41,10 @@ export function MasteryCurveChart() {
 
       const entries = await Promise.all(
         SUBJECTS.map(async (subject) => {
-          const res = await fetch(
-            `${process.env.NEXT_PUBLIC_API_URL}/tutor/mastery-curve?subject=${subject}&grade_band=6`,
-            { headers: { Authorization: `Bearer ${session.access_token}` } }
-          );
+          const endpoint = studentId
+            ? `${process.env.NEXT_PUBLIC_API_URL}/guardian/students/${studentId}/mastery-curve?subject=${subject}&grade_band=6`
+            : `${process.env.NEXT_PUBLIC_API_URL}/tutor/mastery-curve?subject=${subject}&grade_band=6`;
+          const res = await fetch(endpoint, { headers: { Authorization: `Bearer ${session.access_token}` } });
           const data = res.ok ? await res.json() : { points: [] };
           return [subject, data.points as Point[]] as const;
         })
@@ -55,7 +55,7 @@ export function MasteryCurveChart() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [studentId]);
 
   if (!curves) {
     return <p className="text-sm text-ink/45">Loading progress&hellip;</p>;
