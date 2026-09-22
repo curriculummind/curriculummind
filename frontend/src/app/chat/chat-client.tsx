@@ -70,6 +70,7 @@ export function ChatClient({ subject }: { subject: string }) {
   const [progressVersion, setProgressVersion] = useState(0);
   const [historyLoading, setHistoryLoading] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const scrollAnchorRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -105,6 +106,10 @@ export function ChatClient({ subject }: { subject: string }) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [subject]);
+
+  useEffect(() => {
+    scrollAnchorRef.current?.scrollIntoView({ block: "end" });
+  }, [messages]);
 
   async function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -346,6 +351,7 @@ export function ChatClient({ subject }: { subject: string }) {
               </div>
             );
             })}
+            <div ref={scrollAnchorRef} />
           </div>
         </div>
 
