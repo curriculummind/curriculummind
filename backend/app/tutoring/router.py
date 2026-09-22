@@ -11,6 +11,8 @@ this route is left with conversation lifecycle, running that graph,
 and streaming/persisting the generated response.
 """
 
+from urllib.parse import quote
+
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, UploadFile, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -21,6 +23,7 @@ from app.identity.auth import get_current_user_id
 from app.identity.profiles import get_profile
 from app.providers.embeddings import OpenAIEmbeddingClient
 from app.providers.llm import AnthropicLLMClient, Message
+from app.retrieval.images import ResourceImage, get_resource_images, pick_best_image
 from app.tutoring.attachments import transcribe_upload
 from app.tutoring.conversations import (
     append_message,
@@ -153,6 +156,7 @@ async def ask(
     confirm_count_after = tutoring_state["confirm_count"]
     citation_code: str | None = None
     citation_framework: str | None = None
+    evidence_image: ResourceImage | None = None
 
     if decision.get("safety_blocked"):
         response_phase = tutoring_state["tutoring_phase"]
@@ -181,6 +185,9 @@ async def ask(
         if decision["evidence"] and decision["evidence"][0].standard_code:
             citation_code = decision["evidence"][0].standard_code
             citation_framework = decision["evidence"][0].framework_name
+        if decision["evidence"]:
+            images = await get_resource_images(pool, decision["evidence"][0].resource_id)
+            evidence_image = pick_best_image(decision["evidence"][0].content, images)
         struggle_count_after = decision["new_struggle_count"]
         confirm_count_after = decision["new_confirm_count"]
         await update_tutoring_state(
@@ -239,6 +246,10 @@ async def ask(
         response.headers["X-Citation-Code"] = citation_code
     if citation_framework:
         response.headers["X-Citation-Framework"] = citation_framework
+    if evidence_image:
+        response.headers["X-Evidence-Image-Url"] = evidence_image.public_url
+        response.headers["X-Evidence-Image-Caption"] = quote(evidence_image.caption)
+        response.headers["X-Evidence-Image-Attribution"] = quote(evidence_image.attribution)
     return response
 
 

@@ -545,3 +545,33 @@ The history concatenation in `_build_retrieval_query` (Pillar D, Decision 020's 
 * New graph node `retry_with_history` (a trivial state flip, `used_augmented_query: True`) and a loop-back edge from `relevance_check` to `retrieve`, bounded to fire at most once per turn (`_route_after_relevance_check` only routes there when `used_augmented_query` isn't already set, and skips it entirely on turn 1 where `retrieval_query == question` and a retry would just repeat the same search).
 * `_retrieve_node` now records which query it actually searched with (`effective_query`); `_relevance_check_node`'s LLM judgment uses that instead of always `retrieval_query`, so the judgment matches the evidence it's actually being asked about even after a retry.
 * Verified live, both directions on the same fix: the genetics-then-cell-image case now gets a real, grounded answer ("I can't generate images, but here's how to draw your own labeled diagram... animal or plant cell?"); a short "2:3" follow-up to an unrelated-sounding recipe-ratio question still retrieves and answers correctly via the augmented-query fallback, confirming the original rescue case wasn't regressed. Full pytest suite unaffected (61 tests -- this graph has no existing unit tests, being async/DB-dependent; covered by live verification instead, consistent with how the rest of the graph has always been tested).
+
+---
+
+# Decision 027
+
+**Date:** 2026-09-22
+
+## Decision
+
+The tutor shows a real curriculum diagram inline in chat when one exists for the evidence being used, instead of only ever describing content in text -- science only, and only for the Cell Biology concept in this first pass. A new `resource_images` table links a real, backfilled image to a `curriculum_resources` row and the specific CK-12 lesson page it came from; a `curriculum-images` Supabase Storage bucket holds the actual bytes, re-hosted rather than hotlinked.
+
+## Reason
+
+Investigated after a student asked the tutor to "generate an image of a cell and label its parts" and got a generic capability-limit response. No image-generation model exists in this stack, and adding one is a separate vendor/cost decision, deliberately not made here. But the ingestion pipeline already discards every image in the source material -- both extraction paths (pypdf for PDF, BeautifulSoup's `.get_text()` for HTML) keep text only. Direct inspection found this split cleanly by subject: the EngageNY math PDFs have no usable diagrams at all (what pypdf reports as "images" are a repeated background texture or rasterized equation-typesetting fragments; real diagrams are either absent or literally blank "draw this yourself" worksheet prompts), while the CK-12 science HTML pages have genuine, well-labeled diagrams with descriptive alt text and stable CDN URLs. This is science-only by fact, not by choice.
+
+Attribution is at the resource level, not the chunk level, because science ingestion aggregates many CK-12 lesson pages into one `curriculum_resources` row per concept with no page-boundary metadata retained per chunk (`chunk_text()` just flatly packs paragraphs). Retrofitting an exact chunk-to-page mapping onto *existing* `document_chunks` rows would be fragile -- a silent wrong-image match is worse than a coarser but honest granularity -- and re-ingesting fresh would orphan `decision_traces.evidence_chunk_ids`, which joins through `document_chunks.id` for the mastery-tier computation (Pillar C-M). A new table, touching no existing row, avoids both risks.
+
+Scope is deliberately narrow (Cell Biology's 6 lesson pages, not all 11 science concepts): the image-selection heuristic (`pick_best_image`, scoring keyword overlap between the evidence chunk and each candidate image's caption/page-title, since a resource can bundle several lesson pages each with its own image) is new and unproven. Proving it on one already-spot-checked concept before trusting it across ~190 pages is the same incremental-vertical-slice posture as every other feature this project has shipped. Extending later is re-running the backfill script against more `RESOURCES` entries, not a redesign.
+
+The Storage bucket is public-read, not gated behind signed URLs: the source images are already hosted on CK-12's own public CDN today, so re-hosting them publicly exposes nothing that isn't already public -- it only moves who serves the bytes, onto infrastructure this project controls instead of a third party's.
+
+## Impact
+
+* New table `resource_images` (resource_id, source_page_path, source_page_title, image_url, public_url, caption, license, attribution), same RLS posture as `curriculum_resources`/`document_chunks` (authenticated-read, backend-only write).
+* New Storage bucket `curriculum-images`, public read, uploaded via the existing `supabase-py` dependency (already used in `app/identity/auth.py`) -- no new dependency.
+* New standalone script `backend/scripts/backfill_resource_images.py`, separate from and never entangled with `ingest_content.py`'s own ingestion flow, re-runnable (`on conflict (resource_id, source_page_path) do update`). Reuses `ingest_content.py`'s `RESOURCES`/`LIBRETEXTS_BASE`/`BROWSER_HEADERS` rather than re-declaring the source list.
+* `RetrievedChunk` gained `resource_id` (populated from `search_chunks`' existing `curriculum_resources` join, previously selected but not exposed on the model).
+* `/tutor/ask` gained `X-Evidence-Image-Url`/`-Caption`/`-Attribution` response headers, following the exact existing `X-Citation-Code`/`X-Citation-Framework` pattern -- percent-encoded, unlike the citation headers, since caption/attribution are free text from third-party alt attributes rather than short ASCII codes. Math questions never populate `resource_images` rows, so the header is naturally absent with no subject branching needed in the router.
+* Verified live: backfilled all 6 Cell Biology pages, confirmed each image is a genuinely different, correctly captioned diagram (onion cells, organelles, plasma membrane, nucleus, organelles again, plant cell -- two pages legitimately share CK-12's own reused organelles diagram, confirmed by matching file size, not a bug) and every `public_url` is directly fetchable. Filtering needed one iteration live: the first real page (`2.18: Cell Theory`) revealed CK-12's own logo/license-badge images weren't caught by the initial decorative-image filter (only LibreTexts' site logo was) -- fixed and re-verified before trusting the rest of the backfill.
+* Generation prompts (`app/tutoring/generation.py`) are unchanged -- the image is a UI-layer addition, not something the model is told about or asked to reference.

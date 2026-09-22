@@ -7,6 +7,7 @@ class RetrievedChunk(BaseModel):
     """One candidate chunk returned by vector similarity search."""
 
     chunk_id: str
+    resource_id: str
     resource_title: str
     source_url: str
     license: str

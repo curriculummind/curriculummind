@@ -12,6 +12,9 @@ type ChatMessage = {
   strategy?: string;
   citationCode?: string;
   citationFramework?: string;
+  imageUrl?: string;
+  imageCaption?: string;
+  imageAttribution?: string;
 };
 
 const ACCEPTED_UPLOAD_TYPES =
@@ -34,6 +37,16 @@ function splitAnchorAndPrompt(content: string): { anchor: string; prompt: string
 
 function shortFrameworkName(name: string): string {
   return name.split(" State Standards")[0];
+}
+
+/** Caption/attribution headers carry free third-party text, percent-encoded server-side since raw header values can't. */
+function decodeHeader(value: string | null): string | undefined {
+  if (!value) return undefined;
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
 }
 
 /**
@@ -183,6 +196,9 @@ export function ChatClient({ subject }: { subject: string }) {
         strategy: res.headers.get("X-Tutoring-Strategy") ?? undefined,
         citationCode: res.headers.get("X-Citation-Code") ?? undefined,
         citationFramework: res.headers.get("X-Citation-Framework") ?? undefined,
+        imageUrl: res.headers.get("X-Evidence-Image-Url") ?? undefined,
+        imageCaption: decodeHeader(res.headers.get("X-Evidence-Image-Caption")),
+        imageAttribution: decodeHeader(res.headers.get("X-Evidence-Image-Attribution")),
       },
     ]);
 
@@ -306,6 +322,22 @@ export function ChatClient({ subject }: { subject: string }) {
                   </span>
                 )}
                 <p className="whitespace-pre-wrap">{anchor}</p>
+                {message.imageUrl && (
+                  <figure className="mt-3 mb-1">
+                    {/* eslint-disable-next-line @next/next/no-img-element -- external CK-12 CDN, not a local/optimizable asset */}
+                    <img
+                      src={message.imageUrl}
+                      alt={message.imageCaption ?? ""}
+                      className="max-w-full rounded border border-rule"
+                    />
+                    {message.imageCaption && (
+                      <figcaption className="mt-1.5 text-xs text-ink/55">{message.imageCaption}</figcaption>
+                    )}
+                    {message.imageAttribution && (
+                      <p className="mt-0.5 text-[0.65rem] text-ink/40">{message.imageAttribution}</p>
+                    )}
+                  </figure>
+                )}
                 {prompt && (
                   <p className="mt-2.5 border-l-2 border-gold pl-3.5 font-display text-base text-gold italic">
                     {prompt}

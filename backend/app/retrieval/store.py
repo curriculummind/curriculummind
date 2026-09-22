@@ -43,6 +43,7 @@ async def search_chunks(
     query = f"""
         select
             dc.id as chunk_id,
+            cr.id as resource_id,
             cr.title as resource_title,
             cr.source_url as source_url,
             cr.license as license,
@@ -76,6 +77,7 @@ async def search_chunks(
     return [
         RetrievedChunk(
             chunk_id=str(row["chunk_id"]),
+            resource_id=str(row["resource_id"]),
             resource_title=row["resource_title"],
             source_url=row["source_url"] or "",
             license=row["license"],

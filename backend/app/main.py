@@ -69,6 +69,9 @@ app.add_middleware(
         "X-Tutoring-Strategy",
         "X-Citation-Code",
         "X-Citation-Framework",
+        "X-Evidence-Image-Url",
+        "X-Evidence-Image-Caption",
+        "X-Evidence-Image-Attribution",
     ],
 )
 

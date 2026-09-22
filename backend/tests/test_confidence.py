@@ -7,6 +7,7 @@ from app.retrieval.models import RetrievedChunk
 def _chunk(similarity: float) -> RetrievedChunk:
     return RetrievedChunk(
         chunk_id="00000000-0000-0000-0000-000000000000",
+        resource_id="00000000-0000-0000-0000-000000000000",
         resource_title="Test Resource",
         source_url="https://example.com",
         license="test",
