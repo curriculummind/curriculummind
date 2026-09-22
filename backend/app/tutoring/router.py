@@ -52,14 +52,19 @@ NO_EVIDENCE_MESSAGE = (
 
 def _build_retrieval_query(question: str, history: list[Message]) -> str:
     """
-    Combine recent conversation turns with the new question for retrieval.
+    Combine recent conversation turns with the new question, for use as
+    a retrieval fallback (Decision 026) -- not the primary query.
 
     A short follow-up like "is that right?" or "1:2 i think" has no topic
     keywords of its own -- embedding it alone fails the confidence gate
     even when the topic is obvious from context. This is a cheap
     concatenation, not real query rewriting (architecture §15 flags that
     as a future improvement); it's enough to keep a guided-discovery
-    follow-up from silently losing its grounding.
+    follow-up from silently losing its grounding. The tutoring graph
+    tries the bare question first and only falls back to this when that
+    finds nothing relevant, since concatenating a genuine topic switch
+    onto the tutor's own previous (possibly long) answer can push the
+    new topic's real evidence out of the retrieved candidates entirely.
     """
     if not history:
         return question

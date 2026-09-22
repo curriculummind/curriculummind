@@ -525,3 +525,23 @@ Decision 007 already established that an alert should fire from a deterministic 
 * All five of Decision 022's safety categories map to the single `sensitive_topic` notifications category (for icon/styling), but message wording is written per actual category -- a `crisis` flag reads noticeably more urgent than an ordinary `sensitive_topic` hit, deliberately not treated the same.
 * Because `/tutor/ask` returns a hand-built `StreamingResponse` rather than a plain return value, `BackgroundTasks` is not auto-attached by FastAPI and must be assigned to `response.background` explicitly -- confirmed live, not just assumed, since a silent miss here would mean the feature never fires at all.
 * New router `app/evaluation/router.py` (`/guardian/roster`, `/guardian/students/{id}/progress`, `/guardian/students/{id}/mastery-curve`, `/guardian/notifications`), reusing `get_topic_progress`/`get_mastery_curve` from `app/tutoring/progress.py` directly rather than re-deriving the mastery computation for a second audience.
+
+---
+
+# Decision 026
+
+**Date:** 2026-09-22
+
+## Decision
+
+The tutoring graph's `retrieve` node searches with the bare question first. It only retries once, with the history-augmented `retrieval_query`, if the bare-question search finds nothing the relevance check accepts -- reversing the previous default of always searching with history concatenated on.
+
+## Reason
+
+The history concatenation in `_build_retrieval_query` (Pillar D, Decision 020's follow-up) exists to rescue a short, context-free follow-up ("3", "is that right?") that has no topic keywords of its own. But it actively breaks the opposite case: a genuine topic switch. Reported and reproduced live -- "generate an image of a cell and label its parts," asked right after an unrelated genetics question in the same conversation, retrieved zero relevant candidates when embedded together with the tutor's own genetics answer (which dominated the embedding), even though the same question asked as a fresh conversation retrieved and answered correctly. The student got the generic "I don't have curriculum material" fallback for a topic the corpus genuinely covers. Trying the bare question first fixes the topic-switch case for free in the common case (no retry needed) and preserves the original short-follow-up rescue as a fallback, rather than picking one case to break.
+
+## Impact
+
+* New graph node `retry_with_history` (a trivial state flip, `used_augmented_query: True`) and a loop-back edge from `relevance_check` to `retrieve`, bounded to fire at most once per turn (`_route_after_relevance_check` only routes there when `used_augmented_query` isn't already set, and skips it entirely on turn 1 where `retrieval_query == question` and a retry would just repeat the same search).
+* `_retrieve_node` now records which query it actually searched with (`effective_query`); `_relevance_check_node`'s LLM judgment uses that instead of always `retrieval_query`, so the judgment matches the evidence it's actually being asked about even after a retry.
+* Verified live, both directions on the same fix: the genetics-then-cell-image case now gets a real, grounded answer ("I can't generate images, but here's how to draw your own labeled diagram... animal or plant cell?"); a short "2:3" follow-up to an unrelated-sounding recipe-ratio question still retrieves and answers correctly via the augmented-query fallback, confirming the original rescue case wasn't regressed. Full pytest suite unaffected (61 tests -- this graph has no existing unit tests, being async/DB-dependent; covered by live verification instead, consistent with how the rest of the graph has always been tested).

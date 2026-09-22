@@ -14,6 +14,11 @@ already-tested module (retrieval/, assignment.py, correctness.py,
 escalation.py, safety.py) unchanged -- this only changes how they are
 orchestrated, not what any of them do.
 
+Retrieval retries once, on a miss, with a history-augmented query
+instead of always using it (Decision 026): a bounded loop back to
+"retrieve" from "relevance_check", gated by used_augmented_query so it
+can only fire once per turn.
+
 Generation itself (streaming tokens back to the client) deliberately
 stays outside the graph and runs in the router after it completes: a
 single `ainvoke` call returns one final state, which doesn't fit a
@@ -58,6 +63,8 @@ class TutoringState(TypedDict, total=False):
 
     band: str
     evidence: list[RetrievedChunk]
+    effective_query: str
+    used_augmented_query: bool
     is_assignment: bool
     correctness: str | None
     strategy: str
@@ -73,15 +80,37 @@ async def _check_safety_node(state: TutoringState) -> dict:
 
 
 async def _retrieve_node(state: TutoringState) -> dict:
-    """Run curriculum retrieval with its built-in similarity confidence gate."""
+    """
+    Run curriculum retrieval with its built-in similarity confidence gate.
+
+    Retrieves on the bare question first, not the history-augmented
+    retrieval_query -- concatenating recent turns onto the embedding
+    query helps a short, context-free follow-up ("3", "is that right?")
+    that has no topic keywords of its own, but it actively hurts a
+    genuine topic switch: the tutor's own previous (possibly long)
+    answer dominates the embedding and can push the actually-relevant
+    chunks for the NEW topic out of the top candidates entirely.
+    Confirmed on a real case: "generate an image of a cell and label
+    its parts," asked right after a genetics question, retrieved zero
+    relevant candidates when embedded together with the genetics
+    answer, but retrieved correctly on its own. used_augmented_query
+    (set by _retry_with_history_node after a bare-question miss) is
+    the only thing that switches this to the augmented query.
+    """
+    query = state["retrieval_query"] if state.get("used_augmented_query") else state["question"]
     result = await retrieve(
-        state["retrieval_query"],
+        query,
         subject_slug=state["subject"],
         grade_band=state["grade_band"],
         embedder=state["embedder"],
         pool=get_pool(),
     )
-    return {"band": result.band, "evidence": result.evidence}
+    return {"band": result.band, "evidence": result.evidence, "effective_query": query}
+
+
+def _retry_with_history_node(state: TutoringState) -> dict:
+    """A trivial state-flip so the retry loop's edge can carry a state change, not just a routing decision."""
+    return {"used_augmented_query": True}
 
 
 async def _detect_assignment_node(state: TutoringState) -> dict:
@@ -103,9 +132,10 @@ async def _relevance_check_node(state: TutoringState) -> dict:
     (Decision 020's known gap, Pillar D). Runs both directions: a low
     band can be rescued, and a high band that similarity got wrong can
     be caught before generation ever sees bad evidence. Judges against
-    retrieval_query (recent context + the raw turn), not the bare
-    question, since the raw text of a follow-up answer isn't a question
-    an evidence passage could be judged as "answering" on its own.
+    effective_query -- whichever query _retrieve_node actually searched
+    with (bare question, or the history-augmented retrieval_query on a
+    retry) -- not always retrieval_query, so the judgment matches the
+    evidence it's actually being asked about.
 
     Checks the full retrieved candidate list, not just evidence[0]:
     similarity scores on this corpus cluster tightly enough that a
@@ -128,7 +158,7 @@ async def _relevance_check_node(state: TutoringState) -> dict:
     if not candidates:
         return {"band": "low"}
     judgments = await asyncio.gather(
-        *(is_actually_relevant(state["retrieval_query"], chunk, state["llm"]) for chunk in candidates)
+        *(is_actually_relevant(state["effective_query"], chunk, state["llm"]) for chunk in candidates)
     )
     for i, relevant in enumerate(judgments):
         if relevant:
@@ -171,7 +201,18 @@ def _route_after_safety(state: TutoringState) -> str | list[str]:
 
 
 def _route_after_relevance_check(state: TutoringState) -> str:
-    return "classify_correctness" if state["band"] == "high" else END
+    """
+    A bare-question miss retries once with the history-augmented query
+    before giving up -- but only if there's actually history to add
+    (turn 1 has retrieval_query == question, so retrying would just
+    repeat the same search) and only once (used_augmented_query already
+    true means this *is* the retry, so a second miss is final).
+    """
+    if state["band"] == "high":
+        return "classify_correctness"
+    if not state.get("used_augmented_query") and state["retrieval_query"] != state["question"]:
+        return "retry_with_history"
+    return END
 
 
 def _build_graph():
@@ -182,6 +223,7 @@ def _build_graph():
     graph.add_node("retrieve", _retrieve_node)
     graph.add_node("detect_assignment", _detect_assignment_node)
     graph.add_node("relevance_check", _relevance_check_node)
+    graph.add_node("retry_with_history", _retry_with_history_node)
     graph.add_node("classify_correctness", _classify_correctness_node)
     graph.add_node("select_strategy", _select_strategy_node)
 
@@ -189,7 +231,10 @@ def _build_graph():
 
     graph.add_conditional_edges("check_safety", _route_after_safety, ["retrieve", "detect_assignment", END])
     graph.add_edge("retrieve", "relevance_check")
-    graph.add_conditional_edges("relevance_check", _route_after_relevance_check, ["classify_correctness", END])
+    graph.add_conditional_edges(
+        "relevance_check", _route_after_relevance_check, ["classify_correctness", "retry_with_history", END]
+    )
+    graph.add_edge("retry_with_history", "retrieve")
     graph.add_edge("detect_assignment", END)
     graph.add_edge("classify_correctness", "select_strategy")
     graph.add_edge("select_strategy", END)
