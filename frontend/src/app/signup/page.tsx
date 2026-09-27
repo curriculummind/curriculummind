@@ -21,6 +21,8 @@ export default function SignupPage() {
   const [status, setStatus] = useState<"idle" | "loading" | "check-email" | "error">("idle");
   const [error, setError] = useState("");
   const [classCodeError, setClassCodeError] = useState("");
+  const [resendStatus, setResendStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
+  const [resendError, setResendError] = useState("");
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -83,6 +85,19 @@ export default function SignupPage() {
     router.push(profile.role === "teacher" ? "/teacher" : "/home");
   }
 
+  async function handleResend() {
+    setResendStatus("sending");
+    setResendError("");
+    const supabase = createClient();
+    const { error: resendErr } = await supabase.auth.resend({ type: "signup", email });
+    if (resendErr) {
+      setResendError(resendErr.message);
+      setResendStatus("error");
+      return;
+    }
+    setResendStatus("sent");
+  }
+
   if (status === "check-email") {
     return (
       <AuthShell eyebrow="Almost there" heading="Check your email" lede="One last step before your first session.">
@@ -90,6 +105,21 @@ export default function SignupPage() {
           We sent a confirmation link to <span className="font-medium text-ink">{email}</span>. Confirm it,
           then log in.
         </p>
+        <p className="mt-5 text-sm text-ink/60">
+          Didn&rsquo;t get it?{" "}
+          <button
+            type="button"
+            onClick={handleResend}
+            disabled={resendStatus === "sending"}
+            className="font-semibold text-gold underline underline-offset-2 disabled:opacity-50"
+          >
+            {resendStatus === "sending" ? "Sending..." : "Resend the email"}
+          </button>
+        </p>
+        {resendStatus === "sent" && (
+          <p className="mt-2 text-sm text-sage">Sent again &mdash; check your inbox (and spam folder).</p>
+        )}
+        {resendStatus === "error" && <p className="mt-2 text-sm text-red-600">{resendError}</p>}
       </AuthShell>
     );
   }
