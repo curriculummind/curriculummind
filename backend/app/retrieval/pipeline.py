@@ -21,6 +21,7 @@ async def retrieve(
     embedder: EmbeddingClient,
     pool: AsyncConnectionPool,
     concept_slug: str | None = None,
+    resource_id: str | None = None,
 ) -> ConfidenceResult:
     """Run the full retrieve-then-score step for one student question."""
     [query_embedding] = await embedder.embed([question])
@@ -30,5 +31,6 @@ async def retrieve(
         subject_slug=subject_slug,
         grade_band=grade_band,
         concept_slug=concept_slug,
+        resource_id=resource_id,
     )
     return score_retrieval_confidence(candidates)

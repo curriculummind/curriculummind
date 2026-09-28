@@ -575,3 +575,29 @@ The Storage bucket is public-read, not gated behind signed URLs: the source imag
 * `/tutor/ask` gained `X-Evidence-Image-Url`/`-Caption`/`-Attribution` response headers, following the exact existing `X-Citation-Code`/`X-Citation-Framework` pattern -- percent-encoded, unlike the citation headers, since caption/attribution are free text from third-party alt attributes rather than short ASCII codes. Math questions never populate `resource_images` rows, so the header is naturally absent with no subject branching needed in the router.
 * Verified live: backfilled all 6 Cell Biology pages, confirmed each image is a genuinely different, correctly captioned diagram (onion cells, organelles, plasma membrane, nucleus, organelles again, plant cell -- two pages legitimately share CK-12's own reused organelles diagram, confirmed by matching file size, not a bug) and every `public_url` is directly fetchable. Filtering needed one iteration live: the first real page (`2.18: Cell Theory`) revealed CK-12's own logo/license-badge images weren't caught by the initial decorative-image filter (only LibreTexts' site logo was) -- fixed and re-verified before trusting the rest of the backfill.
 * Generation prompts (`app/tutoring/generation.py`) are unchanged -- the image is a UI-layer addition, not something the model is told about or asked to reference.
+
+---
+
+# Decision 028
+
+**Date:** 2026-09-28
+
+## Decision
+
+Clicking a topic in the chat sidebar now narrows retrieval to that one curriculum resource for subsequent questions, until deselected. Clicking the same topic again clears the focus. Previously the click only relabeled the header (`selectedTopic` fed nothing into `/tutor/ask`) -- it looked interactive but had zero effect on what the tutor actually retrieved or discussed.
+
+## Reason
+
+Reported directly: the topic rows are visibly clickable (hover state, highlight on select) but clicking one did nothing a student could actually observe in the conversation. That's worse than not being clickable at all, since it implies a focus that isn't real. Two fixes were on the table -- make it functional, or strip the click affordance entirely -- and functional was chosen because the plumbing already existed: `search_chunks` already had an unused `concept_slug` filter built for exactly this kind of narrowing (Decision 016-era), so adding a `resource_id` filter alongside it was a small, well-understood extension, not new architecture. Scoping to the *conversation's* retrieval rather than opening a separate per-topic chat matches the existing "one continuous conversation per subject" model (conversation resume, no "new chat" concept) -- a topic click changes what the ongoing conversation is currently focused on, it doesn't fork a new thread.
+
+Deliberately no unscoped fallback when a focused question finds nothing in the selected topic: a student who explicitly narrowed to a topic and then asks something unrelated should be told that plainly, not silently answered from a different topic's content, per Decision 026's same "grounded, not generated" posture.
+
+Topic-level mastery tracking needed no changes at all -- it was already computed from which evidence chunks actually got used per turn (`progress.py`), independent of any UI selection state, so "chapterwise completions are tracked" was already true before this fix.
+
+## Impact
+
+* `search_chunks` (`app/retrieval/store.py`) and `retrieve` (`app/retrieval/pipeline.py`) gained an optional `resource_id` filter, applied identically to the existing `concept_slug` filter.
+* `TutoringState` gained `topic_resource_id`; `_retrieve_node` passes it through on both the bare-question and history-augmented-retry passes (Decision 026), so a topic focus survives the retry.
+* `AskRequest` gained `topic_resource_id: str | None`; the frontend sends `selectedTopic?.resourceId` on every turn.
+* `chat-client.tsx`'s topic-select handler is now a toggle (`prev?.resourceId === topic.resourceId ? null : topic`), and a "Focused · clear" chip appears in the chat header when active, both confirming the state and giving an explicit way to clear it beyond re-clicking the same sidebar row.
+* Verified live, mechanically, not just by eyeballing generated prose: the same query embedding run through `search_chunks` unscoped pulled candidates from 5 different resources; scoped to a `resource_id`, all 15 returned candidates matched that resource exactly.

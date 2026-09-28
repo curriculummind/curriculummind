@@ -13,6 +13,7 @@ async def search_chunks(
     subject_slug: str,
     grade_band: str,
     concept_slug: str | None = None,
+    resource_id: str | None = None,
     limit: int = 15,
 ) -> list[RetrievedChunk]:
     """
@@ -27,6 +28,12 @@ async def search_chunks(
     cluster the right answer near the top on this corpus, so the
     per-turn LLM relevance check (Pillar D, graph.py) needs a wide
     enough candidate pool to actually find it.
+
+    resource_id narrows the pool to a single curriculum resource --
+    used when a student has clicked a specific topic in the sidebar
+    (Decision 028), so retrieval actually reflects that focus instead
+    of silently drawing from whatever the question happens to match
+    across the whole subject.
     """
     embedding_literal = str(query_embedding)
     filters = "s.slug = %(subject_slug)s and c.grade_band = %(grade_band)s"
@@ -39,6 +46,9 @@ async def search_chunks(
     if concept_slug is not None:
         filters += " and c.slug = %(concept_slug)s"
         params["concept_slug"] = concept_slug
+    if resource_id is not None:
+        filters += " and cr.id = %(resource_id)s"
+        params["resource_id"] = resource_id
 
     query = f"""
         select

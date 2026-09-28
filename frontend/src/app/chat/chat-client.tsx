@@ -180,6 +180,7 @@ export function ChatClient({ subject }: { subject: string }) {
         subject,
         grade_band: "6",
         conversation_id: conversationId,
+        topic_resource_id: selectedTopic?.resourceId,
       }),
     });
 
@@ -249,7 +250,14 @@ export function ChatClient({ subject }: { subject: string }) {
             &larr; Back to home
           </a>
         </div>
-        <TopicChart subject={subject} selected={selectedTopic} onSelectTopic={setSelectedTopic} version={progressVersion} />
+        <TopicChart
+          subject={subject}
+          selected={selectedTopic}
+          onSelectTopic={(topic) =>
+            setSelectedTopic((prev) => (prev?.resourceId === topic.resourceId ? null : topic))
+          }
+          version={progressVersion}
+        />
         <div className="border-t border-rule px-5 py-3 font-mono text-xs text-ink/45">Grade 6 &middot; Common Core</div>
       </aside>
 
@@ -269,6 +277,15 @@ export function ChatClient({ subject }: { subject: string }) {
             </div>
           </div>
           <div className="flex items-center gap-5">
+            {selectedTopic && (
+              <button
+                type="button"
+                onClick={() => setSelectedTopic(null)}
+                className="flex items-center gap-1.5 rounded-full border border-gold/40 bg-gold/8 px-3 py-1 font-mono text-xs tracking-wide text-gold uppercase hover:bg-gold/14"
+              >
+                Focused &middot; clear
+              </button>
+            )}
             <div className="flex items-center gap-2 rounded-full border border-sage/40 px-3 py-1 font-mono text-xs tracking-wide text-sage uppercase">
               <span className="h-1.5 w-1.5 rounded-full bg-sage" />
               {phaseLabel}

@@ -19,6 +19,11 @@ instead of always using it (Decision 026): a bounded loop back to
 "retrieve" from "relevance_check", gated by used_augmented_query so it
 can only fire once per turn.
 
+A student clicking a topic in the sidebar (Decision 028) narrows
+retrieval to that one curriculum resource via topic_resource_id --
+previously the click only relabeled the header and had no effect on
+what the tutor actually retrieved.
+
 Generation itself (streaming tokens back to the client) deliberately
 stays outside the graph and runs in the router after it completes: a
 single `ainvoke` call returns one final state, which doesn't fit a
@@ -51,6 +56,7 @@ class TutoringState(TypedDict, total=False):
     retrieval_query: str
     subject: str
     grade_band: str
+    topic_resource_id: str | None
     history: list[Message]
     llm: LLMClient
     embedder: EmbeddingClient
@@ -96,6 +102,13 @@ async def _retrieve_node(state: TutoringState) -> dict:
     answer, but retrieved correctly on its own. used_augmented_query
     (set by _retry_with_history_node after a bare-question miss) is
     the only thing that switches this to the augmented query.
+
+    topic_resource_id, when set (Decision 028 -- a student has clicked
+    a specific topic in the sidebar), narrows the candidate pool to
+    that one curriculum resource for both the bare and retry passes.
+    No unscoped fallback: a focused question that finds nothing in the
+    selected topic should say so, not silently drift to a different
+    topic's content.
     """
     query = state["retrieval_query"] if state.get("used_augmented_query") else state["question"]
     result = await retrieve(
@@ -104,6 +117,7 @@ async def _retrieve_node(state: TutoringState) -> dict:
         grade_band=state["grade_band"],
         embedder=state["embedder"],
         pool=get_pool(),
+        resource_id=state.get("topic_resource_id"),
     )
     return {"band": result.band, "evidence": result.evidence, "effective_query": query}
 
@@ -257,6 +271,7 @@ async def run_tutoring_pipeline(
     tutoring_phase: str,
     struggle_count: int,
     confirm_count: int,
+    topic_resource_id: str | None = None,
 ) -> TutoringState:
     """Run the tutoring decision graph and return its final state."""
     initial_state: TutoringState = {
@@ -270,5 +285,6 @@ async def run_tutoring_pipeline(
         "tutoring_phase": tutoring_phase,
         "struggle_count": struggle_count,
         "confirm_count": confirm_count,
+        "topic_resource_id": topic_resource_id,
     }
     return await _compiled_graph.ainvoke(initial_state)

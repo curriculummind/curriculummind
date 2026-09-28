@@ -82,6 +82,7 @@ class AskRequest(BaseModel):
     subject: str
     grade_band: str = "6"
     conversation_id: str | None = None
+    topic_resource_id: str | None = None
 
 
 @router.post("/ask")
@@ -129,6 +130,7 @@ async def ask(
         tutoring_phase=tutoring_state["tutoring_phase"],
         struggle_count=tutoring_state["struggle_count"],
         confirm_count=tutoring_state["confirm_count"],
+        topic_resource_id=request.topic_resource_id,
     )
 
     safety_category = decision.get("safety_category", "none")
