@@ -100,7 +100,9 @@ async def ask(
         )
 
     if request.conversation_id is None:
-        conversation_id = await create_conversation(pool, user_id, request.subject)
+        conversation_id = await create_conversation(
+            pool, user_id, request.subject, topic_resource_id=request.topic_resource_id
+        )
     else:
         owner_id = await get_conversation_owner(pool, request.conversation_id)
         if owner_id is None or owner_id != user_id:
@@ -274,14 +276,19 @@ class ConversationResponse(BaseModel):
 
 
 @router.get("/conversation")
-async def conversation(subject: str, user_id: str = Depends(get_current_user_id)) -> ConversationResponse:
+async def conversation(
+    subject: str, topic_resource_id: str | None = None, user_id: str = Depends(get_current_user_id)
+) -> ConversationResponse:
     """
-    A student's ongoing conversation in a subject: its id and full message
-    history, so the chat screen can resume the same thread on every visit
-    instead of silently starting a new, blank one each time.
+    A student's ongoing conversation in a subject, or in one topic
+    within it (Decision 029) when topic_resource_id is given: its id
+    and full message history, so the chat screen can resume the same
+    thread on every visit instead of silently starting a new, blank
+    one each time -- now scoped to whichever topic is currently
+    focused, not just the subject as a whole.
     """
     pool = get_pool()
-    conversation_id = await get_latest_conversation(pool, user_id, subject)
+    conversation_id = await get_latest_conversation(pool, user_id, subject, topic_resource_id=topic_resource_id)
     if conversation_id is None:
         return ConversationResponse(conversation_id=None, messages=[], tutoring_phase="guiding")
 

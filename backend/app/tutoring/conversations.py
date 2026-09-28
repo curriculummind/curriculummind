@@ -22,14 +22,17 @@ async def get_subject_id(pool: AsyncConnectionPool, slug: str) -> str:
     return str(row["id"])
 
 
-async def create_conversation(pool: AsyncConnectionPool, student_id: str, subject_slug: str) -> str:
-    """Start a new conversation for a student in a subject."""
+async def create_conversation(
+    pool: AsyncConnectionPool, student_id: str, subject_slug: str, topic_resource_id: str | None = None
+) -> str:
+    """Start a new conversation for a student in a subject, optionally scoped to one topic (Decision 029)."""
     subject_id = await get_subject_id(pool, subject_slug)
     async with pool.connection() as conn:
         async with conn.cursor(row_factory=dict_row) as cur:
             await cur.execute(
-                "insert into conversations (student_id, subject_id) values (%s, %s) returning id",
-                (student_id, subject_id),
+                "insert into conversations (student_id, subject_id, topic_resource_id) values (%s, %s, %s) "
+                "returning id",
+                (student_id, subject_id, topic_resource_id),
             )
             row = await cur.fetchone()
     return str(row["id"])
@@ -54,8 +57,15 @@ async def get_last_subject(pool: AsyncConnectionPool, student_id: str) -> str | 
     return row["slug"] if row else None
 
 
-async def get_latest_conversation(pool: AsyncConnectionPool, student_id: str, subject_slug: str) -> str | None:
-    """Return the id of a student's most recently active conversation in a subject, or None if they have none."""
+async def get_latest_conversation(
+    pool: AsyncConnectionPool, student_id: str, subject_slug: str, topic_resource_id: str | None = None
+) -> str | None:
+    """
+    Return the id of a student's most recently active conversation in a
+    subject, scoped to a topic if one is given (Decision 029) -- None
+    matches the general, unfocused conversation, not "any topic", via
+    `is not distinct from` rather than `=` (which never matches NULL).
+    """
     async with pool.connection() as conn:
         async with conn.cursor(row_factory=dict_row) as cur:
             await cur.execute(
@@ -63,11 +73,12 @@ async def get_latest_conversation(pool: AsyncConnectionPool, student_id: str, su
                 select c.id
                 from conversations c
                 join subjects s on s.id = c.subject_id
-                where c.student_id = %s and s.slug = %s
+                where c.student_id = %(student_id)s and s.slug = %(subject_slug)s
+                    and c.topic_resource_id is not distinct from %(topic_resource_id)s
                 order by c.updated_at desc
                 limit 1
                 """,
-                (student_id, subject_slug),
+                {"student_id": student_id, "subject_slug": subject_slug, "topic_resource_id": topic_resource_id},
             )
             row = await cur.fetchone()
     return str(row["id"]) if row else None

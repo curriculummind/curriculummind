@@ -601,3 +601,27 @@ Topic-level mastery tracking needed no changes at all -- it was already computed
 * `AskRequest` gained `topic_resource_id: str | None`; the frontend sends `selectedTopic?.resourceId` on every turn.
 * `chat-client.tsx`'s topic-select handler is now a toggle (`prev?.resourceId === topic.resourceId ? null : topic`), and a "Focused · clear" chip appears in the chat header when active, both confirming the state and giving an explicit way to clear it beyond re-clicking the same sidebar row.
 * Verified live, mechanically, not just by eyeballing generated prose: the same query embedding run through `search_chunks` unscoped pulled candidates from 5 different resources; scoped to a `resource_id`, all 15 returned candidates matched that resource exactly.
+
+---
+
+# Decision 029
+
+**Date:** 2026-09-28
+
+## Decision
+
+A conversation can now be scoped to a specific topic (`conversations.topic_resource_id`, nullable), not just a subject. Selecting a sidebar topic resumes (or starts) a separate conversation for that topic specifically; switching to a different topic shows a blank thread instead of the previous topic's unrelated history; switching back resumes exactly where that topic's own thread left off. `null` still means the general, unfocused conversation per subject -- today's existing behavior, unchanged for a student who never selects a topic.
+
+## Reason
+
+Immediate follow-up to Decision 028: retrieval scoping alone wasn't enough. Reported directly -- selecting a different topic left the old, unrelated conversation on screen with no visible change, which read as "the click still does nothing." A purely cosmetic fix (just clearing the displayed messages) was considered and rejected: the backend still loads full conversation history for every turn, uses the last assistant message to judge correctness, and falls back to recent history when a bare question doesn't retrieve well -- if the screen reset but the backend didn't, a student's first answer under a new topic could get judged against a question they can no longer see. The reset has to be real on both sides, or not claimed at all.
+
+This deliberately extends "one continuous conversation per subject" (the resume model built for conversation persistence) to "one continuous conversation per subject-topic pair," rather than replacing it -- the general, unfocused conversation still works exactly as before. Confirmed the change doesn't touch the actual latency bottleneck (LLM round-trips in the decision pipeline, per the earlier speed investigation) before starting: this is bookkeeping on which conversation row a message belongs to, not a new API call anywhere in the hot path -- if anything, per-conversation history reads get smaller over time as threads split by topic instead of one subject-wide thread growing forever.
+
+## Impact
+
+* New nullable column `conversations.topic_resource_id`, referencing `curriculum_resources`. No RLS change -- the existing per-row "readable by their student" policy already covers it.
+* `create_conversation` and `get_latest_conversation` (`app/tutoring/conversations.py`) both gained an optional `topic_resource_id` parameter; the latter matches `null` via `is not distinct from`, not `=`, since `=` never matches `NULL` in SQL and the general conversation's scope IS `null`.
+* `/tutor/conversation` gained an optional `topic_resource_id` query param; `/tutor/ask`'s `AskRequest` already had one from Decision 028 and now also threads it into conversation creation, not just retrieval.
+* `chat-client.tsx`'s history-loading effect now re-runs on `selectedTopic` changes, not just once on mount, clearing the displayed thread and tutoring-phase state before fetching the newly-scoped one.
+* Verified live end to end, both at the API layer and in a real browser: asked a question focused on one topic, switched to an unrelated topic (blank thread, confirmed), switched back (exact same conversation id and message resumed, not a new one).

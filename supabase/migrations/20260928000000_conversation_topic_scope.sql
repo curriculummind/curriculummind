@@ -1,0 +1,12 @@
+-- Decision 029: a conversation can now be scoped to a specific topic
+-- (curriculum_resources row), not just a subject. null means the
+-- general, unfocused conversation for that subject -- today's existing
+-- behavior, unchanged. Selecting a topic in the sidebar resumes (or
+-- starts) a separate conversation for that topic specifically, so
+-- switching focus doesn't leave stale, unrelated history in view or in
+-- the backend's own "recent context" and correctness-classification
+-- inputs.
+--
+-- No RLS change needed: the existing "conversations are readable by
+-- their student" policy already covers this new column per-row.
+alter table conversations add column topic_resource_id uuid references curriculum_resources (id);

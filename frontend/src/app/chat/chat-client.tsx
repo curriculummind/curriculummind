@@ -50,11 +50,15 @@ function decodeHeader(value: string | null): string | undefined {
 }
 
 /**
- * M0 chat UI with real conversation persistence: on mount, the student's
- * ongoing conversation for this subject (if any) is fetched and the
- * thread is resumed -- one continuous conversation per subject, not a
- * fresh blank one on every visit. The conversation id is then reused on
- * every subsequent question so follow-ups actually continue the same
+ * M0 chat UI with real conversation persistence: the student's ongoing
+ * conversation is fetched and resumed rather than starting blank every
+ * visit. Scoped to the subject by default, or to one topic within it
+ * (Decision 029) once a sidebar topic is selected -- switching topics
+ * re-fetches and resumes *that* topic's own thread, so an unrelated
+ * old conversation doesn't stay in view (or in the backend's own
+ * recent-history/correctness-classification inputs) once focus moves
+ * elsewhere. The conversation id is reused on every subsequent
+ * question within the current scope so follow-ups continue the same
  * dialogue.
  */
 export function ChatClient({ subject }: { subject: string }) {
@@ -75,6 +79,8 @@ export function ChatClient({ subject }: { subject: string }) {
   useEffect(() => {
     let cancelled = false;
     async function loadHistory() {
+      setHistoryLoading(true);
+      setMessages([]);
       const supabase = createClient();
       const {
         data: { session },
@@ -85,9 +91,11 @@ export function ChatClient({ subject }: { subject: string }) {
         return;
       }
 
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/tutor/conversation?subject=${subject}`, {
-        headers: { Authorization: `Bearer ${session.access_token}` },
-      });
+      const topicParam = selectedTopic ? `&topic_resource_id=${selectedTopic.resourceId}` : "";
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/tutor/conversation?subject=${subject}${topicParam}`,
+        { headers: { Authorization: `Bearer ${session.access_token}` } }
+      );
       if (!res.ok || cancelled) {
         if (!cancelled) setHistoryLoading(false);
         return;
@@ -105,7 +113,7 @@ export function ChatClient({ subject }: { subject: string }) {
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [subject]);
+  }, [subject, selectedTopic?.resourceId]);
 
   useEffect(() => {
     scrollAnchorRef.current?.scrollIntoView({ block: "end" });
