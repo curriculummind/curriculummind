@@ -117,10 +117,14 @@ async def ask(
     await append_message(pool, conversation_id, "student", request.question)
 
     embedder = OpenAIEmbeddingClient(api_key=settings.openai_api_key, model=settings.openai_embedding_model)
-    # Two models, two jobs (Decision 030): the decision pipeline's four
-    # classification calls (safety/assignment/relevance/correctness)
+    # Two models, two jobs (Decision 030): safety/assignment/relevance
     # run on a small, fast model -- generation stays on the full one,
     # since that's the response quality the student actually reads.
+    # Correctness classification also stays on the full model (measured
+    # regression on the small one: ~90% vs 100% reliable on the same
+    # real cases) -- it's the one judgment the struggle/confirm
+    # escalation state machine runs on, so a wrong call doesn't just
+    # cost a little quality, it visibly breaks the tutoring flow.
     classifier_llm = AnthropicLLMClient(api_key=settings.anthropic_api_key, model=settings.anthropic_classifier_model)
     generation_llm = AnthropicLLMClient(api_key=settings.anthropic_api_key, model=settings.anthropic_model)
 
@@ -133,6 +137,7 @@ async def ask(
         grade_band=request.grade_band,
         history=history,
         llm=classifier_llm,
+        correctness_llm=generation_llm,
         embedder=embedder,
         tutoring_phase=tutoring_state["tutoring_phase"],
         struggle_count=tutoring_state["struggle_count"],

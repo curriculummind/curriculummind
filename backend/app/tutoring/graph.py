@@ -59,6 +59,7 @@ class TutoringState(TypedDict, total=False):
     topic_resource_id: str | None
     history: list[Message]
     llm: LLMClient
+    correctness_llm: LLMClient
     embedder: EmbeddingClient
     tutoring_phase: str
     struggle_count: int
@@ -181,13 +182,26 @@ async def _relevance_check_node(state: TutoringState) -> dict:
 
 
 async def _classify_correctness_node(state: TutoringState) -> dict:
-    """Classify the student's answer against the tutor's last question, if there was one."""
+    """
+    Classify the student's answer against the tutor's last question, if
+    there was one.
+
+    Deliberately uses correctness_llm (the full generation-quality
+    model), not the classifier_llm the other three decision nodes use
+    (Decision 030) -- measured directly (10 trials on the same real,
+    unambiguous case) at ~90% reliable on the small classifier versus
+    100% on the full model. This is the single judgment the struggle/
+    confirm escalation state machine (Decision 031) runs on; getting it
+    wrong doesn't just cost a little quality, it visibly breaks the
+    tutoring flow (either explaining something the student already
+    understood, or looping past it).
+    """
     last_assistant_message = next(
         (message for message in reversed(state["history"]) if message.role == "assistant"), None
     )
     if last_assistant_message is None:
         return {"correctness": None}
-    correctness = await classify_answer(last_assistant_message.content, state["question"], state["llm"])
+    correctness = await classify_answer(last_assistant_message.content, state["question"], state["correctness_llm"])
     return {"correctness": correctness}
 
 
@@ -267,6 +281,7 @@ async def run_tutoring_pipeline(
     grade_band: str,
     history: list[Message],
     llm: LLMClient,
+    correctness_llm: LLMClient,
     embedder: EmbeddingClient,
     tutoring_phase: str,
     struggle_count: int,
@@ -281,6 +296,7 @@ async def run_tutoring_pipeline(
         "grade_band": grade_band,
         "history": history,
         "llm": llm,
+        "correctness_llm": correctness_llm,
         "embedder": embedder,
         "tutoring_phase": tutoring_phase,
         "struggle_count": struggle_count,
