@@ -117,7 +117,12 @@ async def ask(
     await append_message(pool, conversation_id, "student", request.question)
 
     embedder = OpenAIEmbeddingClient(api_key=settings.openai_api_key, model=settings.openai_embedding_model)
-    llm = AnthropicLLMClient(api_key=settings.anthropic_api_key, model=settings.anthropic_model)
+    # Two models, two jobs (Decision 030): the decision pipeline's four
+    # classification calls (safety/assignment/relevance/correctness)
+    # run on a small, fast model -- generation stays on the full one,
+    # since that's the response quality the student actually reads.
+    classifier_llm = AnthropicLLMClient(api_key=settings.anthropic_api_key, model=settings.anthropic_classifier_model)
+    generation_llm = AnthropicLLMClient(api_key=settings.anthropic_api_key, model=settings.anthropic_model)
 
     retrieval_query = _build_retrieval_query(request.question, history)
     tutoring_state = await get_tutoring_state(pool, conversation_id)
@@ -127,7 +132,7 @@ async def ask(
         subject=request.subject,
         grade_band=request.grade_band,
         history=history,
-        llm=llm,
+        llm=classifier_llm,
         embedder=embedder,
         tutoring_phase=tutoring_state["tutoring_phase"],
         struggle_count=tutoring_state["struggle_count"],
@@ -209,7 +214,7 @@ async def ask(
                 history,
                 subject=request.subject,
                 grade_band=request.grade_band,
-                llm=llm,
+                llm=generation_llm,
                 is_assignment=decision["is_assignment"],
                 strategy=decision["strategy"],
             )

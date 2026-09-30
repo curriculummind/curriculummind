@@ -16,6 +16,14 @@ class Settings(BaseSettings):
 
     anthropic_api_key: str = ""
     anthropic_model: str = "claude-sonnet-4-5"
+    # Used for every classification-only call in the tutoring decision
+    # pipeline (safety, assignment detection, relevance judgment,
+    # correctness classification) -- none of them need generation-
+    # quality reasoning, just a fast, reliable category/yes-no judgment.
+    # anthropic_model is reserved for the actual streamed tutoring
+    # response, and for worksheet transcription (accuracy-sensitive:
+    # reading a photographed assignment), which stays on it too.
+    anthropic_classifier_model: str = "claude-haiku-4-5-20251001"
     openai_api_key: str = ""
     openai_embedding_model: str = "text-embedding-3-small"
 

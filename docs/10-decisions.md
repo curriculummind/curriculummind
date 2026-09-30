@@ -625,3 +625,26 @@ This deliberately extends "one continuous conversation per subject" (the resume 
 * `/tutor/conversation` gained an optional `topic_resource_id` query param; `/tutor/ask`'s `AskRequest` already had one from Decision 028 and now also threads it into conversation creation, not just retrieval.
 * `chat-client.tsx`'s history-loading effect now re-runs on `selectedTopic` changes, not just once on mount, clearing the displayed thread and tutoring-phase state before fetching the newly-scoped one.
 * Verified live end to end, both at the API layer and in a real browser: asked a question focused on one topic, switched to an unrelated topic (blank thread, confirmed), switched back (exact same conversation id and message resumed, not a new one).
+
+---
+
+# Decision 030
+
+**Date:** 2026-09-30
+
+## Decision
+
+The tutoring decision pipeline's four classification-only calls (safety check, assignment detection, relevance judgment, correctness classification) now run on a smaller, faster model (Haiku) instead of the same model used for the actual tutoring response. Generation and worksheet transcription stay on the full model.
+
+## Reason
+
+Reported directly, with two explicit constraints: fastest response possible, with no added cost, prioritizing consistency and performance. Measured the pipeline first (already timed per-node a few days earlier): classification is four sequential LLM round-trips before generation even starts, and none of them need generation-quality reasoning -- each is a narrow category or yes/no judgment. Splitting model by *role* (classify vs. generate) rather than uniformly using the strongest model everywhere is a pure win on both stated constraints: a smaller model is cheaper per call, not more, so latency improves without adding cost.
+
+The real risk was "consistency," not architecture -- several of these exact prompts were hand-tuned this session to fix real accuracy bugs (Decision 016's relevance wording, the correctness classifier's `_last_question` fix, Decision 026's retrieval retry). A cheaper model could plausibly judge those same edge cases differently. Verified live before trusting this, not assumed: re-ran every one of the session's previously-fixed tricky cases -- crisis-language detection, PII, prompt injection, the "what is 2:3" notation-vs-literal-number relevance case, the genetics-then-cell-image retry case, a terse-but-correct numeric answer, and the reproduction-adjacent sensitive-topic case -- all nine produced the same behavior as the documented, previously-verified baseline. No regression found.
+
+## Impact
+
+* New setting `anthropic_classifier_model` (default `claude-haiku-4-5-20251001`), separate from `anthropic_model`.
+* `/tutor/ask` now builds two `AnthropicLLMClient` instances instead of one: `classifier_llm` passed into `run_tutoring_pipeline` (reaches all four graph classification nodes automatically, since they already read a single `state["llm"]` uniformly -- zero changes needed in `graph.py` itself), `generation_llm` passed only to `generate_grounded_response`. Worksheet transcription (`/tutor/transcribe`) keeps its own separate full-model client unchanged -- accuracy-sensitive (reading a photographed assignment), and wasn't part of the four classification call sites this decision covers.
+* Measured live, same 3-turn scenario timed a few days earlier (genetics -> cell-image -> follow-up, the exact case from the original latency report): pre-stream latency dropped from ~8.6s to ~6.2-6.5s per turn, roughly a quarter faster, with zero additional cost (a smaller classifier model is strictly cheaper, not more).
+* Further latency ideas surfaced but deliberately not built yet, each flagged with its real tradeoff rather than assumed safe: skip the LLM relevance check entirely when top-similarity confidence is very high (biggest remaining lever, since relevance-check is still the single largest cost -- needs the same before/after accuracy verification rigor as this decision before shipping); prompt caching on the repeated boilerplate portion of each classification prompt (pure infrastructure, no quality risk, not yet implemented); parallelizing correctness classification with the front of the pipeline instead of gating it behind relevance check (now cheaper to accept than when first raised, since the wasted call on blocked/low-confidence turns is a Haiku call, not a full-model one -- still a real if small added cost, left as the user's call, not decided here); reducing the 15-candidate relevance pool -- explicitly rejected, since that count exists specifically because the correct chunk has ranked as low as 11th in this corpus (Decision 016/`store.py`'s own docstring).
