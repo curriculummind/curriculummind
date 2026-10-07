@@ -5,7 +5,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from app.db import get_pool
 from app.identity.auth import get_current_user_id
 from app.identity.models import Profile, ProfileCreate
-from app.identity.profiles import create_profile, get_profile, get_teacher_id_by_class_code
+from app.identity.profiles import (
+    create_profile,
+    get_profile,
+    get_student_id_by_link_code,
+    get_teacher_id_by_class_code,
+)
 
 router = APIRouter(prefix="/profile", tags=["identity"])
 
@@ -25,6 +30,15 @@ async def create_my_profile(data: ProfileCreate, user_id: str = Depends(get_curr
                 detail="That class code doesn't match a teacher. Check it and try again.",
             )
         return await create_profile(pool, user_id, data, teacher_id=teacher_id)
+
+    if data.role == "guardian":
+        student_id = await get_student_id_by_link_code(pool, data.student_link_code)
+        if student_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="That link code doesn't match a student. Check it and try again.",
+            )
+        return await create_profile(pool, user_id, data, student_id=student_id)
 
     return await create_profile(pool, user_id, data)
 

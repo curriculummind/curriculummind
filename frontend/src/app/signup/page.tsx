@@ -9,18 +9,20 @@ import { AuthShell } from "@/components/auth-shell";
  * Sign-up form: creates a Supabase Auth user, then a matching backend
  * profile. Grade is fixed to 6 -- the only grade band with content
  * ingested so far. A student must redeem a teacher's class code to
- * finish setup (Decision 024) -- parent/guardian linking is deferred.
+ * finish setup (Decision 024); a parent redeems their own child's link
+ * code instead (Decision 034) -- the mirror image, not an email invite.
  */
 export default function SignupPage() {
   const router = useRouter();
-  const [role, setRole] = useState<"student" | "teacher">("student");
+  const [role, setRole] = useState<"student" | "teacher" | "guardian">("student");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [classCode, setClassCode] = useState("");
+  const [studentLinkCode, setStudentLinkCode] = useState("");
   const [status, setStatus] = useState<"idle" | "loading" | "check-email" | "error">("idle");
   const [error, setError] = useState("");
-  const [classCodeError, setClassCodeError] = useState("");
+  const [codeError, setCodeError] = useState("");
   const [resendStatus, setResendStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
   const [resendError, setResendError] = useState("");
 
@@ -28,13 +30,14 @@ export default function SignupPage() {
     e.preventDefault();
     setStatus("loading");
     setError("");
-    setClassCodeError("");
+    setCodeError("");
 
     const profileFields = {
       role,
       display_name: displayName,
       grade_level: 6,
       class_code: role === "student" ? classCode.trim().toUpperCase() : undefined,
+      student_link_code: role === "guardian" ? studentLinkCode.trim().toUpperCase() : undefined,
     };
 
     const supabase = createClient();
@@ -72,7 +75,9 @@ export default function SignupPage() {
     if (!response.ok) {
       if (response.status === 400) {
         const body = await response.json().catch(() => null);
-        setClassCodeError(body?.detail ?? "That class code doesn't match a teacher.");
+        const fallback =
+          role === "guardian" ? "That link code doesn't match a student." : "That class code doesn't match a teacher.";
+        setCodeError(body?.detail ?? fallback);
         setStatus("error");
         return;
       }
@@ -82,7 +87,7 @@ export default function SignupPage() {
     }
 
     const profile = await response.json();
-    router.push(profile.role === "teacher" ? "/teacher" : "/home");
+    router.push(profile.role === "teacher" || profile.role === "guardian" ? "/teacher" : "/home");
   }
 
   async function handleResend() {
@@ -131,17 +136,23 @@ export default function SignupPage() {
           <label className="mb-[7px] block font-mono text-[0.68rem] tracking-[0.06em] text-ink/50 uppercase">
             I am a
           </label>
-          <div className="grid grid-cols-2 gap-2">
-            {(["student", "teacher"] as const).map((r) => (
+          <div className="grid grid-cols-3 gap-2">
+            {(
+              [
+                ["student", "Student"],
+                ["teacher", "Teacher"],
+                ["guardian", "Parent"],
+              ] as const
+            ).map(([r, label]) => (
               <button
                 key={r}
                 type="button"
                 onClick={() => setRole(r)}
-                className={`rounded border px-3.5 py-3 text-sm font-medium capitalize transition ${
+                className={`rounded border px-3.5 py-3 text-sm font-medium transition ${
                   role === r ? "border-gold bg-ink text-paper" : "border-rule bg-paper-2 text-ink/70 hover:border-gold/50"
                 }`}
               >
-                {r}
+                {label}
               </button>
             ))}
           </div>
@@ -198,7 +209,23 @@ export default function SignupPage() {
               onChange={(e) => setClassCode(e.target.value)}
               className="w-full rounded border border-rule bg-paper-2 px-3.5 py-3 uppercase text-ink placeholder:text-ink/30 placeholder:normal-case focus:border-gold focus:ring-2 focus:ring-gold/25 focus:outline-none"
             />
-            {classCodeError && <p className="mt-1.5 text-sm text-red-600">{classCodeError}</p>}
+            {codeError && <p className="mt-1.5 text-sm text-red-600">{codeError}</p>}
+          </div>
+        )}
+        {role === "guardian" && (
+          <div>
+            <label className="mb-[7px] block font-mono text-[0.68rem] tracking-[0.06em] text-ink/50 uppercase">
+              Student link code
+            </label>
+            <input
+              type="text"
+              placeholder="From your child's account"
+              required
+              value={studentLinkCode}
+              onChange={(e) => setStudentLinkCode(e.target.value)}
+              className="w-full rounded border border-rule bg-paper-2 px-3.5 py-3 uppercase text-ink placeholder:text-ink/30 placeholder:normal-case focus:border-gold focus:ring-2 focus:ring-gold/25 focus:outline-none"
+            />
+            {codeError && <p className="mt-1.5 text-sm text-red-600">{codeError}</p>}
           </div>
         )}
         {error && <p className="text-sm text-red-600">{error}</p>}

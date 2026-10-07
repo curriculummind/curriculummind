@@ -15,6 +15,7 @@ export function HomeClient() {
   const router = useRouter();
   const [lastSubject, setLastSubject] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [linkCode, setLinkCode] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -24,16 +25,22 @@ export function HomeClient() {
         data: { session },
       } = await supabase.auth.getSession();
       if (!session) return;
+      const headers = { Authorization: `Bearer ${session.access_token}` };
 
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/tutor/last-subject`, {
-        headers: { Authorization: `Bearer ${session.access_token}` },
-      });
-      if (!res.ok || cancelled) return;
-      const data = await res.json();
-      if (!cancelled) {
+      const [lastSubjectRes, profileRes] = await Promise.all([
+        fetch(`${process.env.NEXT_PUBLIC_API_URL}/tutor/last-subject`, { headers }),
+        fetch(`${process.env.NEXT_PUBLIC_API_URL}/profile/me`, { headers }),
+      ]);
+      if (cancelled) return;
+      if (lastSubjectRes.ok) {
+        const data = await lastSubjectRes.json();
         setLastSubject(data.subject);
-        setLoading(false);
       }
+      if (profileRes.ok) {
+        const profile = await profileRes.json();
+        setLinkCode(profile.student_link_code ?? null);
+      }
+      setLoading(false);
     }
     load();
     return () => {
@@ -109,6 +116,15 @@ export function HomeClient() {
           </span>
         </a>
       </section>
+
+      {linkCode && (
+        <p className="mt-10 text-center text-sm text-ink/50">
+          Want a parent to see your progress?{" "}
+          <span className="font-mono text-ink/70">
+            Share this code: <span className="font-semibold text-ink">{linkCode}</span>
+          </span>
+        </p>
+      )}
     </main>
   );
 }

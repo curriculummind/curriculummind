@@ -53,11 +53,21 @@ function formatRelative(dateStr: string | null): string {
 }
 
 /**
- * The teacher's roster: every linked student, a per-subject mastery-tier
+ * The guardian roster: every linked student, a per-subject mastery-tier
  * summary each, and a notification feed -- the guardian side of the
  * same mastery data students see about themselves (Decision 025).
+ * Shared by both a teacher (many students, a class code) and a parent
+ * (usually one child, no class code, Decision 034) -- guardian_links
+ * and every /guardian/* query are already generic over which kind of
+ * link created the row, so only copy differs here.
  */
-export function TeacherClient({ classCode }: { classCode: string | null }) {
+export function TeacherClient({
+  classCode,
+  viewerRole,
+}: {
+  classCode: string | null;
+  viewerRole: "teacher" | "guardian";
+}) {
   const router = useRouter();
   const [roster, setRoster] = useState<RosterStudent[] | null>(null);
   const [notifications, setNotifications] = useState<Notification[] | null>(null);
@@ -118,7 +128,7 @@ export function TeacherClient({ classCode }: { classCode: string | null }) {
       <div className="mb-8 flex items-center justify-between">
         <Logo />
         <div className="flex items-center gap-4">
-          {classCode && (
+          {viewerRole === "teacher" && classCode && (
             <span className="rounded-full border border-gold/35 bg-gold/8 px-3.5 py-1.5 font-mono text-xs tracking-[0.06em] text-gold uppercase">
               Class code &middot; {classCode}
             </span>
@@ -166,7 +176,9 @@ export function TeacherClient({ classCode }: { classCode: string | null }) {
         </div>
       </div>
 
-      <h1 className="mb-1 font-display text-2xl font-medium text-ink">Your class</h1>
+      <h1 className="mb-1 font-display text-2xl font-medium text-ink">
+        {viewerRole === "guardian" ? (studentCount === 1 ? "Your child" : "Your children") : "Your class"}
+      </h1>
       <p className="mb-8 text-sm text-ink/60">Every linked student, plotted against their mastery tier.</p>
 
       <div className="mb-8 grid grid-cols-3 gap-4">
@@ -187,7 +199,11 @@ export function TeacherClient({ classCode }: { classCode: string | null }) {
       <div className="overflow-hidden rounded-lg border border-rule bg-paper-2">
         {roster === null && <p className="p-6 text-sm text-ink/45">Loading roster&hellip;</p>}
         {roster && roster.length === 0 && (
-          <p className="p-6 text-sm text-ink/50">No students have joined your class yet. Share your class code above.</p>
+          <p className="p-6 text-sm text-ink/50">
+            {viewerRole === "guardian"
+              ? "No student is linked yet. Ask your child for their link code from their home screen."
+              : "No students have joined your class yet. Share your class code above."}
+          </p>
         )}
         {roster && roster.length > 0 && (
           <table className="w-full text-sm">

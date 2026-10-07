@@ -30,10 +30,10 @@ export default function LoginPage() {
     // Covers the case where signup required email confirmation, so the
     // profile was never created at signup time -- this is the first
     // point a confirmed user has a usable session. The role/class_code
-    // the user actually chose at signup survives in user_metadata
-    // (set via signUp's options.data); falling back to "student" with
-    // no class_code only happens for accounts created before this
-    // metadata was captured.
+    // (or student_link_code, Decision 034) the user actually chose at
+    // signup survives in user_metadata (set via signUp's options.data);
+    // falling back to "student" with no class_code only happens for
+    // accounts created before this metadata was captured.
     const token = data.session.access_token;
     let role: string = "student";
     const existing = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/profile/me`, {
@@ -50,6 +50,7 @@ export default function LoginPage() {
           display_name: meta.display_name ?? email.split("@")[0],
           grade_level: meta.grade_level ?? 6,
           class_code: role === "student" ? meta.class_code : undefined,
+          student_link_code: role === "guardian" ? meta.student_link_code : undefined,
         }),
       });
       const profile = await created.json().catch(() => null);
@@ -59,7 +60,7 @@ export default function LoginPage() {
       role = profile.role;
     }
 
-    router.push(role === "teacher" ? "/teacher" : "/home");
+    router.push(role === "teacher" || role === "guardian" ? "/teacher" : "/home");
     router.refresh();
   }
 

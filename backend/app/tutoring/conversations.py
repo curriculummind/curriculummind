@@ -146,6 +146,30 @@ async def append_message(pool: AsyncConnectionPool, conversation_id: str, role: 
         )
 
 
+async def count_messages_today(pool: AsyncConnectionPool, student_id: str) -> int:
+    """
+    Count a student's own messages (not the tutor's replies) across all
+    their conversations since UTC midnight -- the free-tier daily
+    question cap (Decision 034). A stated simplification, not
+    per-student-timezone-aware: a student near the UTC day boundary
+    could see their count reset at a time that doesn't match their own
+    midnight.
+    """
+    async with pool.connection() as conn:
+        async with conn.cursor(row_factory=dict_row) as cur:
+            await cur.execute(
+                """
+                select count(*) as n
+                from messages m
+                join conversations c on c.id = m.conversation_id
+                where c.student_id = %s and m.role = 'student' and m.created_at >= date_trunc('day', now())
+                """,
+                (student_id,),
+            )
+            row = await cur.fetchone()
+    return row["n"]
+
+
 async def record_flagged_interaction(
     pool: AsyncConnectionPool,
     conversation_id: str,

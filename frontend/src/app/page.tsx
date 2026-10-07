@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Logo } from "@/components/logo";
 import { HeroGraph } from "@/components/hero-graph";
+import { WaitlistForm } from "@/components/waitlist-form";
 
 const PRINCIPLES = [
   {
@@ -57,7 +58,7 @@ export default async function Home() {
         }).catch(() => null)
       : null;
     const profile = res?.ok ? await res.json() : null;
-    redirect(profile?.role === "teacher" ? "/teacher" : "/home");
+    redirect(profile?.role === "teacher" || profile?.role === "guardian" ? "/teacher" : "/home");
   }
 
   return (
@@ -199,6 +200,21 @@ export default async function Home() {
               Ask a question, or answer the one above&hellip;
             </div>
             <div className="rounded bg-ink px-5 py-3 text-sm font-semibold whitespace-nowrap text-paper">Ask</div>
+          </div>
+        </div>
+      </section>
+
+      <section className="border-t border-rule py-[54px]">
+        <div className="mx-auto flex max-w-[1180px] flex-col items-start gap-6 px-8 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 className="mb-1.5 font-display text-xl font-medium text-ink">Not ready to sign up yet?</h2>
+            <p className="text-sm text-ink/60">
+              Join the waitlist as a parent or teacher &mdash; we&rsquo;ll reach out when there&rsquo;s a spot for a
+              pilot.
+            </p>
+          </div>
+          <div className="w-full md:max-w-[480px]">
+            <WaitlistForm />
           </div>
         </div>
       </section>

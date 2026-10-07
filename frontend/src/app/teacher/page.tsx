@@ -26,9 +26,12 @@ export default async function TeacherPage() {
 
   // Defense in depth, not the real boundary -- every /guardian/* endpoint
   // enforces its own authorization regardless of what this page renders.
-  if (profile?.role !== "teacher") {
+  // A parent (Decision 034) lands on the same dashboard as a teacher --
+  // guardian_links and every /guardian/* query are already generic over
+  // how the link was made, so the only thing that differs is copy.
+  if (profile?.role !== "teacher" && profile?.role !== "guardian") {
     redirect("/home");
   }
 
-  return <TeacherClient classCode={profile.class_code} />;
+  return <TeacherClient classCode={profile.class_code} viewerRole={profile.role} />;
 }

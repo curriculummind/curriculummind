@@ -27,6 +27,7 @@ from app.retrieval.images import ResourceImage, get_resource_images, pick_best_i
 from app.tutoring.attachments import transcribe_upload
 from app.tutoring.conversations import (
     append_message,
+    count_messages_today,
     create_conversation,
     get_conversation_owner,
     get_last_subject,
@@ -49,6 +50,16 @@ DB_ROLE_TO_LLM_ROLE = {"student": "user", "assistant": "assistant"}
 
 NO_EVIDENCE_MESSAGE = (
     "I don't have material covering that specific question in your course. Try asking something else from your course."
+)
+
+# Decision 034: the free-tier premium gate. A parent marking their
+# child "premium" (stubbed -- scripts/set_subscription_status.py, no
+# real billing yet) removes this cap entirely.
+FREE_DAILY_QUESTION_LIMIT = 10
+
+DAILY_LIMIT_MESSAGE = (
+    "You've reached today's question limit on the free plan. A parent can upgrade to remove it, "
+    "or come back tomorrow."
 )
 
 
@@ -92,7 +103,8 @@ async def ask(
     pool = get_pool()
     settings = get_settings()
 
-    if await get_profile(pool, user_id) is None:
+    profile = await get_profile(pool, user_id)
+    if profile is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Profile not set up yet. Complete sign-up before asking a question.",
@@ -115,6 +127,27 @@ async def ask(
 
     await append_message(pool, conversation_id, "student", request.question)
 
+    tutoring_state = await get_tutoring_state(pool, conversation_id)
+
+    async def stream_and_persist(text_stream):
+        pieces: list[str] = []
+        async for token in text_stream:
+            pieces.append(token)
+            yield token
+        await append_message(pool, conversation_id, "assistant", "".join(pieces))
+
+    if profile.subscription_status != "premium":
+        asked_today = await count_messages_today(pool, user_id)
+        if asked_today >= FREE_DAILY_QUESTION_LIMIT:
+
+            async def capped():
+                yield DAILY_LIMIT_MESSAGE
+
+            response = StreamingResponse(stream_and_persist(capped()), media_type="text/plain")
+            response.headers["X-Conversation-Id"] = conversation_id
+            response.headers["X-Tutoring-Phase"] = tutoring_state["tutoring_phase"]
+            return response
+
     embedder = OpenAIEmbeddingClient(api_key=settings.openai_api_key, model=settings.openai_embedding_model)
     # Two models, two jobs (Decision 030): safety/assignment/relevance
     # run on a small, fast model -- generation stays on the full one,
@@ -128,7 +161,6 @@ async def ask(
     generation_llm = AnthropicLLMClient(api_key=settings.anthropic_api_key, model=settings.anthropic_model)
 
     retrieval_query = _build_retrieval_query(request.question, history)
-    tutoring_state = await get_tutoring_state(pool, conversation_id)
     decision = await run_tutoring_pipeline(
         question=request.question,
         retrieval_query=retrieval_query,
@@ -154,13 +186,6 @@ async def ask(
             question=request.question,
             blocked=decision.get("safety_blocked", False),
         )
-
-    async def stream_and_persist(text_stream):
-        pieces: list[str] = []
-        async for token in text_stream:
-            pieces.append(token)
-            yield token
-        await append_message(pool, conversation_id, "assistant", "".join(pieces))
 
     trace_evidence_chunk_ids: list[str] = []
     trace_strategy: str | None = None
