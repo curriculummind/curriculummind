@@ -673,3 +673,35 @@ With that fixed, a direct before/after comparison (10 trials, identical real cas
 * `_classify_correctness_node` (`app/tutoring/graph.py`) uses a new `correctness_llm` state field, separate from the `llm` field the other three classification nodes share; `run_tutoring_pipeline` takes an explicit `correctness_llm` parameter; `/tutor/ask` passes its `generation_llm` (the full model) for it, not `classifier_llm`.
 * `backend/tests/test_escalation.py` rewritten -- the old tests asserted the bug as correct behavior (e.g. "a correct answer resets struggle count and keeps guiding" as the *expected* outcome); new tests cover both counters' caps, cross-phase struggle sharing, and that a correct/incorrect answer resets the other counter.
 * Verified live end to end, both paths: two correct answers in a row (to what was actually asked, not just "obviously right" content) produced `confirm_question` then `confirm_wrapup`; three non-correct answers in a row (mixing "unclear" and "incorrect") produced `explain` on exactly the third, not before and not never.
+
+---
+
+# Decision 032
+
+**Date:** 2026-10-06
+
+## Decision
+
+A real, re-runnable RAGAS-style offline evaluation harness now exists (`backend/scripts/run_evaluation.py`, metrics in `backend/app/rag_eval/`): a 22-case hand-curated golden set (`backend/scripts/evaluation/golden_set.py`) run through the actual, unmocked retrieval and generation pipeline, scored on context precision, context recall, faithfulness, and answer relevancy, with results committed to `docs/evaluation-report.md` and `backend/scripts/evaluation/results.json`.
+
+## Reason
+
+The proposal's gap analysis already named this plainly: a formal RAGAS-style evaluation report was the single most repeated, most explicit item across both proposal drafts, and the one true gap against a named success criterion. No golden set, harness, or `ragas`-equivalent dependency existed anywhere in the repo.
+
+`ragas` itself wasn't adopted: it's built around LangChain chat models, and this stack's `LLMClient`/`EmbeddingClient` abstractions (Anthropic forced-tool-use structured output, a plain OpenAI embedding client) don't fit that shape. Reimplementing each metric's definition directly follows the same precedent Decision 016 already set for cross-encoder reranking -- same job, different mechanism. Three of the four metrics (precision, recall, faithfulness) became direct LLM-judge calls; answer relevancy keeps RAGAS's own published algorithm unchanged (reverse-engineer questions from the answer, embed, cosine-compare against the original question), since the embedding client it needs already existed for exactly this purpose.
+
+Context precision deliberately reuses `is_actually_relevant` (`app/retrieval/relevance.py`) rather than writing a second, parallel relevance judgment -- it's already the exact question that metric asks. That reuse surfaced a real harness bug before this could ship: a first draft determined each case's confidence band from `retrieve()`'s raw similarity gate alone, and 3 of 4 deliberately out-of-corpus probes came back "high" -- the harness wasn't testing what students actually experience. The live pipeline's effective band isn't the raw gate, it's that gate as overridden by `_relevance_check_node`'s LLM judgment (Decision 016/Pillar D), which runs on every turn regardless of raw similarity. Fixed by sharing one set of relevance judgments between the band decision and the precision score (`judge_relevance`, `app/rag_eval/context_precision.py`), rather than asking the LLM about the same chunks twice. After the fix, all 4 fallback probes correctly triggered.
+
+Running the fixed harness for real surfaced one genuine retrieval finding, left in the report rather than smoothed over: the `virus-vs-bacteria` case retrieved topically on-target candidates by raw similarity (0.48 top score, correct resource) that the relevance judge rejected outright -- the top chunks are CK-12 section-header outlines ("What is a Virus? Are Viruses Alive? Replication...") rather than substantive paragraphs, genuinely too thin for a tutor to answer from even though they're on-topic. A real chunking-quality gap on this one resource, not a harness defect.
+
+Judges every metric with the full model, not the fast classifier model Decision 030 moved live classification to: this harness runs offline with no user waiting, so that latency/cost tradeoff doesn't apply, and a judge should be tuned for reliability the same way Decision 031 kept correctness classification on the full model.
+
+Scoped deliberately to single-turn, direct-answer-eligible cases only, named plainly in the report itself: guided-discovery follow-ups and the escalated strategies (explain, confirm_*) don't produce one single "the answer" to hold up against RAGAS's criteria.
+
+## Impact
+
+* New package `backend/app/rag_eval/` (`context_precision.py`, `context_recall.py`, `faithfulness.py`, `answer_relevancy.py`, `models.py`) -- named distinctly from the pre-existing, unrelated `backend/app/evaluation/` package (the live guardian-dashboard/notifications feature), not placed inside it.
+* New `backend/scripts/evaluation/golden_set.py`: 18 cases, one per real ingested `concepts.slug` (6 Eureka Math Grade 6 modules, 12 CK-12 Life Science Grade 6 concepts, confirmed live against the database before writing them), plus 4 deliberately out-of-corpus fallback probes.
+* New `backend/scripts/run_evaluation.py` (`python -m scripts.run_evaluation`), following `ingest_content.py`'s existing script conventions. Costs real Anthropic + OpenAI API usage per run.
+* New `backend/tests/test_evaluation.py` (14 tests, pure metrics math against hand-written `FakeLLMClient`/`FakeEmbeddingClient` stubs, no network/DB) -- full suite now 89 tests, all passing.
+* First real run: 18/18 answerable cases retrieved evidence except one genuine chunking-quality miss (`virus-vs-bacteria`, named above); aggregate scores on the other 17 -- context precision 0.49, context recall 0.94, faithfulness 0.99, answer relevancy 0.71; all 4 fallback probes correctly declined to answer. Full results in `docs/evaluation-report.md` and `backend/scripts/evaluation/results.json`, both committed as the actual deliverable, not just the capability to produce one.
