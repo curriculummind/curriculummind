@@ -37,7 +37,7 @@ from app.tutoring.conversations import (
     update_tutoring_state,
 )
 from app.evaluation.notifications import detect_and_record_notifications
-from app.tutoring.generation import generate_grounded_response
+from app.tutoring.generation import generate_general_knowledge_response, generate_grounded_response
 from app.tutoring.graph import run_tutoring_pipeline
 from app.tutoring.progress import MasteryPoint, Module, get_mastery_curve, get_topic_progress
 from app.tutoring.safety import SENSITIVE_NO_EVIDENCE_MESSAGE, response_for
@@ -48,8 +48,7 @@ router = APIRouter(prefix="/tutor", tags=["tutoring"])
 DB_ROLE_TO_LLM_ROLE = {"student": "user", "assistant": "assistant"}
 
 NO_EVIDENCE_MESSAGE = (
-    "I don't have curriculum material covering that yet. Try asking about "
-    "ratios, unit rates, expressions, equations, ecosystems, or cells."
+    "I don't have material covering that specific question in your course. Try asking something else from your course."
 )
 
 
@@ -184,12 +183,30 @@ async def ask(
         response_phase = tutoring_state["tutoring_phase"]
         trace_is_assignment = decision.get("is_assignment")
         trace_correctness = decision.get("correctness")
-        message = SENSITIVE_NO_EVIDENCE_MESSAGE if safety_category == "sensitive_topic" else NO_EVIDENCE_MESSAGE
 
-        async def fallback():
-            yield message
+        if safety_category == "sensitive_topic":
 
-        body = stream_and_persist(fallback())
+            async def fallback():
+                yield SENSITIVE_NO_EVIDENCE_MESSAGE
+
+            body = stream_and_persist(fallback())
+        elif decision.get("can_answer_generally"):
+            trace_strategy = "general_knowledge"
+            body = stream_and_persist(
+                generate_general_knowledge_response(
+                    request.question,
+                    history,
+                    subject=request.subject,
+                    grade_band=request.grade_band,
+                    llm=generation_llm,
+                )
+            )
+        else:
+
+            async def fallback():
+                yield NO_EVIDENCE_MESSAGE
+
+            body = stream_and_persist(fallback())
     else:
         response_phase = decision["new_phase"]
         trace_is_assignment = decision["is_assignment"]

@@ -111,6 +111,28 @@ PROMPT_TEMPLATES: dict[Strategy, str] = {
 
 STYLE_RULES = "\n\nNever use an em dash (—). Use a comma, period, or colon instead."
 
+GENERAL_KNOWLEDGE_PROMPT = """You are CurriculumMind, a tutor for a Grade {grade_band} student studying {subject}.
+
+The student asked a real {subject} question, but your curriculum materials
+don't cover it -- it's most likely something normally taught in an earlier
+grade. Give a short, clear, accurate explanation anyway: 2-3 sentences,
+grade-appropriate, no bulleted list, no full lecture. You may end with one
+short question or a quick example offer, but don't demand the student answer
+before you'll continue.
+
+Do not claim this is from the student's course materials, and do not
+mention "evidence" or "curriculum" -- the opening disclosure is already
+handled for you, just teach the concept directly after it."""
+
+# Decision 019's explain-prompt adherence gap applies here too: prompting
+# the model to disclose this isn't from the curriculum doesn't guarantee
+# it will, every time, in the same words. Sent as a deterministic prefix
+# instead, the same pattern ASSIGNMENT_ACKNOWLEDGMENT already uses, since
+# this disclosure is the one thing Principle 6 actually needs to hold.
+GENERAL_KNOWLEDGE_ACKNOWLEDGMENT = (
+    "That's not something your course materials cover, but here's a quick explanation:\n\n"
+)
+
 
 def _format_evidence(evidence: list[RetrievedChunk]) -> str:
     """Render retrieved chunks as a labeled block for the generation prompt."""
@@ -145,5 +167,26 @@ async def generate_grounded_response(
     # Prompted not to, but models don't always comply (seen elsewhere in this
     # pipeline, e.g. Decision 019's explain-prompt adherence gap) -- a plain
     # character substitution on each token guarantees it regardless.
+    async for token in llm.generate_text(messages, system=system):
+        yield token.replace("—", ", ")
+
+
+async def generate_general_knowledge_response(
+    question: str,
+    history: list[Message],
+    *,
+    subject: str,
+    grade_band: str,
+    llm: LLMClient,
+) -> AsyncIterator[str]:
+    """
+    Stream a clearly-labeled, ungrounded explanation for a question with
+    no curriculum evidence (Decision 033) -- only called after
+    classify_answerable_generally has judged the question a legitimate
+    subject concept, not an arbitrary off-topic one.
+    """
+    system = GENERAL_KNOWLEDGE_PROMPT.format(grade_band=grade_band, subject=subject) + STYLE_RULES
+    messages = [*history, Message(role="user", content=question)]
+    yield GENERAL_KNOWLEDGE_ACKNOWLEDGMENT
     async for token in llm.generate_text(messages, system=system):
         yield token.replace("—", ", ")

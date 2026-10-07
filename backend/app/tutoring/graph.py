@@ -24,6 +24,14 @@ retrieval to that one curriculum resource via topic_resource_id --
 previously the click only relabeled the header and had no effect on
 what the tutor actually retrieved.
 
+A question that ends low-confidence even after the retry isn't
+necessarily a bad question -- it might be a real, in-subject concept
+the ingested curriculum text just never covers (an earlier-grade
+prerequisite, most often). classify_general_knowledge (Decision 033)
+runs only on that terminal path to tell that apart from a genuinely
+off-subject or nonsensical question, so the router can give a clearly-
+labeled general-knowledge explanation instead of a flat refusal.
+
 Generation itself (streaming tokens back to the client) deliberately
 stays outside the graph and runs in the router after it completes: a
 single `ainvoke` call returns one final state, which doesn't fit a
@@ -46,6 +54,7 @@ from app.retrieval.relevance import is_actually_relevant
 from app.tutoring.assignment import detect_assignment
 from app.tutoring.correctness import classify_answer
 from app.tutoring.escalation import next_state
+from app.tutoring.general_knowledge import classify_answerable_generally
 from app.tutoring.safety import classify_safety, should_block
 
 
@@ -73,6 +82,7 @@ class TutoringState(TypedDict, total=False):
     effective_query: str
     used_augmented_query: bool
     is_assignment: bool
+    can_answer_generally: bool
     correctness: str | None
     strategy: str
     new_phase: str
@@ -181,6 +191,26 @@ async def _relevance_check_node(state: TutoringState) -> dict:
     return {"band": "low"}
 
 
+async def _classify_general_knowledge_node(state: TutoringState) -> dict:
+    """
+    Only reached on the terminal low-confidence path (Decision 033): no
+    curriculum evidence was judged relevant even after the retry, so
+    this is the last chance to tell "a real concept this course just
+    doesn't cover" apart from "actually unrelated or not a real
+    concept" before the router falls back to a flat refusal.
+
+    Skipped for a sensitive_topic-flagged question -- that path always
+    keeps its own dedicated redirect regardless of this answer, so
+    there's nothing for this classification to change.
+    """
+    if state.get("safety_category") == "sensitive_topic":
+        return {"can_answer_generally": False}
+    can_answer = await classify_answerable_generally(
+        state["question"], state["subject"], state["grade_band"], state["llm"]
+    )
+    return {"can_answer_generally": can_answer}
+
+
 async def _classify_correctness_node(state: TutoringState) -> dict:
     """
     Classify the student's answer against the tutor's last question, if
@@ -240,7 +270,7 @@ def _route_after_relevance_check(state: TutoringState) -> str:
         return "classify_correctness"
     if not state.get("used_augmented_query") and state["retrieval_query"] != state["question"]:
         return "retry_with_history"
-    return END
+    return "classify_general_knowledge"
 
 
 def _build_graph():
@@ -252,6 +282,7 @@ def _build_graph():
     graph.add_node("detect_assignment", _detect_assignment_node)
     graph.add_node("relevance_check", _relevance_check_node)
     graph.add_node("retry_with_history", _retry_with_history_node)
+    graph.add_node("classify_general_knowledge", _classify_general_knowledge_node)
     graph.add_node("classify_correctness", _classify_correctness_node)
     graph.add_node("select_strategy", _select_strategy_node)
 
@@ -260,10 +291,13 @@ def _build_graph():
     graph.add_conditional_edges("check_safety", _route_after_safety, ["retrieve", "detect_assignment", END])
     graph.add_edge("retrieve", "relevance_check")
     graph.add_conditional_edges(
-        "relevance_check", _route_after_relevance_check, ["classify_correctness", "retry_with_history", END]
+        "relevance_check",
+        _route_after_relevance_check,
+        ["classify_correctness", "retry_with_history", "classify_general_knowledge"],
     )
     graph.add_edge("retry_with_history", "retrieve")
     graph.add_edge("detect_assignment", END)
+    graph.add_edge("classify_general_knowledge", END)
     graph.add_edge("classify_correctness", "select_strategy")
     graph.add_edge("select_strategy", END)
 

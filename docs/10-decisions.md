@@ -705,3 +705,32 @@ Scoped deliberately to single-turn, direct-answer-eligible cases only, named pla
 * New `backend/scripts/run_evaluation.py` (`python -m scripts.run_evaluation`), following `ingest_content.py`'s existing script conventions. Costs real Anthropic + OpenAI API usage per run.
 * New `backend/tests/test_evaluation.py` (14 tests, pure metrics math against hand-written `FakeLLMClient`/`FakeEmbeddingClient` stubs, no network/DB) -- full suite now 89 tests, all passing.
 * First real run: 18/18 answerable cases retrieved evidence except one genuine chunking-quality miss (`virus-vs-bacteria`, named above); aggregate scores on the other 17 -- context precision 0.49, context recall 0.94, faithfulness 0.99, answer relevancy 0.71; all 4 fallback probes correctly declined to answer. Full results in `docs/evaluation-report.md` and `backend/scripts/evaluation/results.json`, both committed as the actual deliverable, not just the capability to produce one.
+
+---
+
+# Decision 033
+
+**Date:** 2026-10-06
+
+## Decision
+
+A question that ends low-confidence even after the retrieval retry (Decision 026) is no longer always flatly refused. A new classification step (`classify_answerable_generally`, `app/tutoring/general_knowledge.py`) separates "a real concept for this subject and grade that the ingested curriculum text just doesn't cover" from "actually unrelated to the subject, nonsensical, or not a real concept." The former now gets a clearly-labeled, honest general-knowledge explanation (`generate_general_knowledge_response`, `app/tutoring/generation.py`); the latter still gets the plain refusal.
+
+## Reason
+
+Reported directly: a student focused on "Multi-Digit Decimal Operations" asked "what is a decimal" and got the generic low-confidence fallback. Investigated live before assuming it was a scoping bug: at every retrieval scope (the selected topic, its whole concept, the entire math subject corpus) every retrieved candidate was decimal *operations* content, and the LLM relevance judge (Decision 016) correctly rejected all of it as unable to answer "what is a decimal" -- confirmed by running the production relevance check directly against all 15 candidates, every one `False`. This wasn't a bug: Eureka Math Grade 6 assumes decimals were already defined in an earlier grade and jumps straight to computing with them. The corpus genuinely doesn't have the content.
+
+The explicit ask was for the app to recognize this as a real concept and explain it anyway. That's a real tension with Principle 6 ("Retrieval Before Generation" -- prioritise factual grounding over fluent but unsupported responses) and with the generation prompt's own instruction to never invent beyond the evidence. The resolution kept the principle rather than quietly dropping it: add a second response mode that's honest about not being grounded, instead of either (a) silently generating from the model's general knowledge as if it came from the course, or (b) continuing to refuse a question that deserves a real answer. The disclosure is sent as a deterministic prefix (`GENERAL_KNOWLEDGE_ACKNOWLEDGMENT`), not left to the model to remember -- the same "prompted but not guaranteed" reasoning Decision 019's `ASSIGNMENT_ACKNOWLEDGMENT` already established for the assignment-detection disclosure.
+
+This doesn't reopen Decision 028's "no silent drift" rule (a topic-focused question finding nothing in its scope should be told that plainly, not silently answered from a different topic's content): that rule was about a response falsely appearing grounded in the wrong material. This path never claims any grounding at all, with or without a topic focused.
+
+The new classification call is skipped outright when `safety_category == "sensitive_topic"` -- verified live with a puberty-adjacent question under an unrelated subject (forcing band low): `can_answer_generally` came back `False` without the extra call running, and the router's existing `SENSITIVE_NO_EVIDENCE_MESSAGE` branch is checked first regardless, so a sensitive topic always keeps its own redirect to a trusted adult.
+
+## Impact
+
+* New `app/tutoring/general_knowledge.py`: `classify_answerable_generally(question, subject, grade_band, llm)`, using `classifier_llm` (Haiku, matching the other three narrow classification calls, Decision 030) -- only called on the terminal low-confidence path, so it costs nothing on the normal high-confidence path.
+* `graph.py`: new node `classify_general_knowledge`, wired in place of `_route_after_relevance_check`'s old final `return END`; new `TutoringState` field `can_answer_generally`.
+* `generation.py`: new `GENERAL_KNOWLEDGE_PROMPT`, `GENERAL_KNOWLEDGE_ACKNOWLEDGMENT`, and `generate_general_knowledge_response(question, history, *, subject, grade_band, llm)`.
+* `router.py`'s `band == "low"` branch now checks three cases in order: `sensitive_topic` keeps its dedicated redirect; `can_answer_generally` streams the new honest explanation and records `trace_strategy = "general_knowledge"` in `decision_traces` (free-text column, no migration needed); everything else keeps the flat refusal. That refusal message (`NO_EVIDENCE_MESSAGE`) was also fixed while touching this code -- it was a stale hardcoded list naming only 6 of the 18 real ingested concepts; simplified to not enumerate specific topics at all, so it can't drift out of date again.
+* New `backend/tests/test_general_knowledge.py`; full suite now 91 tests, all passing.
+* Verified live: the exact reported case now streams a real, accurate, disclosed explanation instead of refusing; genuinely off-subject questions ("who won the super bowl", "what is the capital of France") still decline; a sensitive-but-uncovered question still gets the trusted-adult redirect. One of the eval harness's (Decision 032) four `expect_fallback` golden-set probes ("What is the Pythagorean theorem and how do you use it?") now correctly flips from declining to explaining -- expected, since it's genuine in-subject prerequisite content, not a regression in the harness itself.
