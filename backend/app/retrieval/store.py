@@ -6,6 +6,26 @@ from psycopg_pool import AsyncConnectionPool
 from app.retrieval.models import RetrievedChunk
 
 
+async def get_concept_names(pool: AsyncConnectionPool, subject_slug: str, grade_band: str) -> list[str]:
+    """
+    The plain list of topic names this subject/grade actually covers
+    (Decision 035) -- used to gate the in-scope-but-not-chunk-grounded
+    answer tier. Deliberately a bare query against `concepts`, not
+    `get_topic_progress`'s join (`app/tutoring/progress.py`): that join
+    exists to compute per-student mastery tiers through
+    `document_chunks`/`decision_traces`, cost this doesn't need just to
+    know which topics exist.
+    """
+    async with pool.connection() as conn, conn.cursor(row_factory=dict_row) as cur:
+        await cur.execute(
+            "select c.name from concepts c join subjects s on s.id = c.subject_id "
+            "where s.slug = %s and c.grade_band = %s",
+            (subject_slug, grade_band),
+        )
+        rows = await cur.fetchall()
+    return [row["name"] for row in rows]
+
+
 async def search_chunks(
     pool: AsyncConnectionPool,
     query_embedding: list[float],

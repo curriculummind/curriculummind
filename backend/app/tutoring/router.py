@@ -38,7 +38,11 @@ from app.tutoring.conversations import (
     update_tutoring_state,
 )
 from app.evaluation.notifications import detect_and_record_notifications
-from app.tutoring.generation import generate_general_knowledge_response, generate_grounded_response
+from app.tutoring.generation import (
+    generate_general_knowledge_response,
+    generate_grounded_response,
+    generate_in_scope_response,
+)
 from app.tutoring.graph import run_tutoring_pipeline
 from app.tutoring.progress import MasteryPoint, Module, get_mastery_curve, get_topic_progress
 from app.tutoring.safety import SENSITIVE_NO_EVIDENCE_MESSAGE, response_for
@@ -215,6 +219,18 @@ async def ask(
                 yield SENSITIVE_NO_EVIDENCE_MESSAGE
 
             body = stream_and_persist(fallback())
+        elif decision.get("topic_in_scope"):
+            trace_strategy = "guiding_in_scope"
+            body = stream_and_persist(
+                generate_in_scope_response(
+                    request.question,
+                    history,
+                    subject=request.subject,
+                    grade_band=request.grade_band,
+                    llm=generation_llm,
+                    is_assignment=decision.get("is_assignment", False),
+                )
+            )
         elif decision.get("can_answer_generally"):
             trace_strategy = "general_knowledge"
             body = stream_and_persist(

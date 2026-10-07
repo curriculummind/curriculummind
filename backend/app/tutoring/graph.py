@@ -27,10 +27,16 @@ what the tutor actually retrieved.
 A question that ends low-confidence even after the retry isn't
 necessarily a bad question -- it might be a real, in-subject concept
 the ingested curriculum text just never covers (an earlier-grade
-prerequisite, most often). classify_general_knowledge (Decision 033)
-runs only on that terminal path to tell that apart from a genuinely
-off-subject or nonsensical question, so the router can give a clearly-
-labeled general-knowledge explanation instead of a flat refusal.
+prerequisite, most often). classify_general_knowledge (Decision 033,
+extended by Decision 035) runs only on that terminal path and checks
+two things in order: first, whether the question is genuinely about a
+topic *this course* teaches (just not the literal chunk that got
+retrieved) -- if so, the router answers at full guided-discovery depth
+with no disclosure, since it's genuinely in-scope content. Only if
+that's false does it fall back to Decision 033's original question --
+a real but out-of-course concept, versus genuinely off-subject or
+nonsensical -- which still gets a disclosed general-knowledge
+explanation or a flat refusal respectively.
 
 Generation itself (streaming tokens back to the client) deliberately
 stays outside the graph and runs in the router after it completes: a
@@ -51,10 +57,11 @@ from app.providers.llm import LLMClient, Message
 from app.retrieval.models import RetrievedChunk
 from app.retrieval.pipeline import retrieve
 from app.retrieval.relevance import is_actually_relevant
+from app.retrieval.store import get_concept_names
 from app.tutoring.assignment import detect_assignment
 from app.tutoring.correctness import classify_answer
 from app.tutoring.escalation import next_state
-from app.tutoring.general_knowledge import classify_answerable_generally
+from app.tutoring.general_knowledge import classify_answerable_generally, classify_topic_in_scope
 from app.tutoring.safety import classify_safety, should_block
 
 
@@ -83,6 +90,7 @@ class TutoringState(TypedDict, total=False):
     used_augmented_query: bool
     is_assignment: bool
     can_answer_generally: bool
+    topic_in_scope: bool
     correctness: str | None
     strategy: str
     new_phase: str
@@ -195,20 +203,34 @@ async def _classify_general_knowledge_node(state: TutoringState) -> dict:
     """
     Only reached on the terminal low-confidence path (Decision 033): no
     curriculum evidence was judged relevant even after the retry, so
-    this is the last chance to tell "a real concept this course just
-    doesn't cover" apart from "actually unrelated or not a real
-    concept" before the router falls back to a flat refusal.
+    this is the last chance before the router falls back to a flat
+    refusal. Checks two things in order (Decision 035): first, whether
+    the question is genuinely about a topic *this course* teaches, just
+    not the literal chunk that got retrieved -- if so, skip the second,
+    more generic check entirely (it's the more common case, and already
+    answered). Only if that's false does it fall back to Decision 033's
+    original question: a real but out-of-course concept, versus
+    actually unrelated or not a real concept at all.
 
     Skipped for a sensitive_topic-flagged question -- that path always
     keeps its own dedicated redirect regardless of this answer, so
     there's nothing for this classification to change.
     """
     if state.get("safety_category") == "sensitive_topic":
-        return {"can_answer_generally": False}
+        return {"can_answer_generally": False, "topic_in_scope": False}
+
+    topics = await get_concept_names(get_pool(), state["subject"], state["grade_band"])
+    if topics:
+        in_scope = await classify_topic_in_scope(
+            state["question"], topics, state["subject"], state["grade_band"], state["llm"]
+        )
+        if in_scope:
+            return {"can_answer_generally": True, "topic_in_scope": True}
+
     can_answer = await classify_answerable_generally(
         state["question"], state["subject"], state["grade_band"], state["llm"]
     )
-    return {"can_answer_generally": can_answer}
+    return {"can_answer_generally": can_answer, "topic_in_scope": False}
 
 
 async def _classify_correctness_node(state: TutoringState) -> dict:

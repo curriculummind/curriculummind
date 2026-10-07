@@ -133,6 +133,31 @@ GENERAL_KNOWLEDGE_ACKNOWLEDGMENT = (
     "That's not something your course materials cover, but here's a quick explanation:\n\n"
 )
 
+# Decision 035: a sibling of GUIDING_PROMPT, not a parameterization of it --
+# generate_grounded_response structurally renders an evidence block into
+# every call, which would actively mislead the model here (there's no
+# literal retrieved passage to be "limited to"). Same two-part shape, same
+# 3-4 sentence cap, same assignment-notice mechanism; the only real change
+# is the one sentence governing what the model is allowed to draw on.
+IN_SCOPE_PROMPT = """You are CurriculumMind, a tutor for a Grade {grade_band} student studying {subject}.
+
+This question is about a topic this course covers, even though it goes beyond
+the specific passage on record for it. Answer from your own full knowledge of
+the topic -- you are not limited to one retrieved passage here. Do not
+lecture. Respond in two short parts:
+
+1. One or two sentences giving a single concrete anchor -- a small example or a
+   restatement of the specific numbers/terms in the student's own question.
+   Not a general definition, not multiple examples, not a bulleted list.
+2. One genuine question that makes the student work out the next step
+   themselves, specific to what they asked -- not a generic "does that make
+   sense?" check-in.
+
+Keep the whole response to 3-4 sentences total. Never just explain the full
+answer. Do not mention "evidence", "chunks", or that you were given source
+material -- just talk to the student directly, as a tutor would.
+{assignment_notice}"""
+
 
 def _format_evidence(evidence: list[RetrievedChunk]) -> str:
     """Render retrieved chunks as a labeled block for the generation prompt."""
@@ -188,5 +213,37 @@ async def generate_general_knowledge_response(
     system = GENERAL_KNOWLEDGE_PROMPT.format(grade_band=grade_band, subject=subject) + STYLE_RULES
     messages = [*history, Message(role="user", content=question)]
     yield GENERAL_KNOWLEDGE_ACKNOWLEDGMENT
+    async for token in llm.generate_text(messages, system=system):
+        yield token.replace("—", ", ")
+
+
+async def generate_in_scope_response(
+    question: str,
+    history: list[Message],
+    *,
+    subject: str,
+    grade_band: str,
+    llm: LLMClient,
+    is_assignment: bool = False,
+) -> AsyncIterator[str]:
+    """
+    Stream a full-depth, guided-discovery-style answer for a question
+    that isn't chunk-grounded but is genuinely about a topic this course
+    covers (Decision 035) -- only called after classify_topic_in_scope
+    has confirmed that. No disclosure prefix, unlike
+    generate_general_knowledge_response: this is in-scope content, not
+    stepping outside the course. Assignment detection (Decision 017)
+    still applies on this tier exactly as on the grounded one -- a
+    pasted problem that lands here still doesn't get the final answer
+    handed over.
+    """
+    assignment_notice = ASSIGNMENT_NOTICE if is_assignment else ""
+    system = (
+        IN_SCOPE_PROMPT.format(grade_band=grade_band, subject=subject, assignment_notice=assignment_notice)
+        + STYLE_RULES
+    )
+    messages = [*history, Message(role="user", content=question)]
+    if is_assignment:
+        yield ASSIGNMENT_ACKNOWLEDGMENT
     async for token in llm.generate_text(messages, system=system):
         yield token.replace("—", ", ")
