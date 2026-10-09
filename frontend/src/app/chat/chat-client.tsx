@@ -295,6 +295,17 @@ export function ChatClient({ subject }: { subject: string }) {
     const RecognitionCtor = window.SpeechRecognition ?? window.webkitSpeechRecognition;
     if (!RecognitionCtor) return;
 
+    // A previous attempt that errored or got stuck without cleanly
+    // firing onend/onerror can leave a stale instance behind; starting
+    // a new recognizer while one is still technically active throws
+    // synchronously (InvalidStateError), silently, with the button
+    // already showing "Listening..." and nothing to show for it.
+    try {
+      recognitionRef.current?.stop();
+    } catch {
+      // already stopped or never started -- nothing to clean up
+    }
+
     const recognition = new RecognitionCtor();
     recognition.continuous = false;
     recognition.interimResults = true;
@@ -322,7 +333,12 @@ export function ChatClient({ subject }: { subject: string }) {
     recognitionRef.current = recognition;
     setVoiceError(null);
     setListening(true);
-    recognition.start();
+    try {
+      recognition.start();
+    } catch {
+      setListening(false);
+      setVoiceError("Couldn't start listening. Try clicking the mic again.");
+    }
   }
 
   async function handleLogout() {

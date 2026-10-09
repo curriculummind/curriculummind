@@ -837,3 +837,22 @@ Implementing this surfaced a real correctness issue worth naming: `recognition.o
 
 * `frontend/src/app/chat/chat-client.tsx`: `handleSubmit` split into a thin form handler plus `submitQuestion(raw: string)`, shared by both the typed-submit path and voice; `toggleListening`'s `onend` now calls `submitQuestion(finalTranscript)` when there's real transcribed text, using a closure-local variable rather than reading back out of state.
 * Verified live, genuinely end to end, not just UI rendering: macOS's own text-to-speech synthesized a real spoken question into a WAV file, fed to Chrome as a fake microphone via `--use-file-for-fake-audio-capture`, so Chrome's actual cloud speech-recognition service did real transcription (not a mock). Clicking "Speak" correctly transcribed "what is a ratio," auto-submitted with no further click, and the real backend returned a correct, grounded, guided-discovery answer -- the full pipeline confirmed working, not assumed.
+
+---
+
+# Decision 036 (hardened)
+
+**Date:** 2026-10-09
+
+## Decision
+
+`toggleListening` now defensively cleans up any stale `SpeechRecognition` instance before starting a new one, and wraps `recognition.start()` in a try/catch -- either failure now surfaces a visible error message instead of leaving the mic button stuck on "Listening..." with no feedback at all.
+
+## Reason
+
+Reported directly: clicking the mic, speaking, and releasing produced no visible result. `recognition.start()` throws synchronously (`InvalidStateError`) if a recognizer is already active -- and since `listening` was set to `true` *before* calling `.start()`, a throw there left the button showing "Listening..." indefinitely with no error surfaced and no way to recover except a page reload. Couldn't fully rule out this being the actual cause versus testing against a not-yet-deployed build (the same deploy-timing confusion hit more than once already this session) -- fixed the real gap regardless, since a silent failure mode is worth closing either way.
+
+## Impact
+
+* `frontend/src/app/chat/chat-client.tsx`'s `toggleListening`: stops any existing `recognitionRef.current` (wrapped in try/catch, since stopping an already-stopped or never-started recognizer can itself throw) before creating a new one; `recognition.start()` wrapped in try/catch, reverting `listening` to `false` and setting a visible `voiceError` message on failure instead of leaving the UI stuck.
+* Verified live: re-ran the same real-speech-to-real-answer end-to-end test (synthesized audio fed to Chrome as a fake microphone) to confirm normal operation is unaffected, plus a deliberate rapid-double-click stress test targeting the exact stale-instance scenario this fix addresses -- no stuck state, no silent failure, the mic button correctly returned to its idle state every time.
