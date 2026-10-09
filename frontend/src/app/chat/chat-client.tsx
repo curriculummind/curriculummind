@@ -178,9 +178,20 @@ export function ChatClient({ subject }: { subject: string }) {
     setAttaching(false);
   }
 
-  async function handleSubmit(e: React.FormEvent) {
+  function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const asked = question.trim();
+    submitQuestion(question);
+  }
+
+  /**
+   * Shared by the typed-submit form handler and voice auto-submit
+   * (Decision 036) -- voice can't just call setQuestion then trigger the
+   * form's own submit, since a state update isn't visible to the next
+   * line of code in the same tick; passing the final transcript straight
+   * through avoids that stale-read entirely.
+   */
+  async function submitQuestion(raw: string) {
+    const asked = raw.trim();
     if (!asked) return;
 
     setLoading(true);
@@ -265,11 +276,16 @@ export function ChatClient({ subject }: { subject: string }) {
   }
 
   /**
-   * Push-to-talk input (Decision 036): speaking fills the same `question`
-   * state the textarea's own onChange already uses, so the transcript
-   * lands in the same editable box a student can review before sending --
-   * not a separate send-on-speak path. Auto-stops on a pause (not
-   * continuous), so this is click-speak-done, not always-listening.
+   * Push-to-talk input (Decision 036, revised after live feedback): the
+   * live transcript still fills the same `question` state the textarea's
+   * own onChange uses, so there's visible feedback while speaking -- but
+   * on its own that wasn't enough signal that anything was heard at all,
+   * and the original "fill the box, then the student sends it" step felt
+   * like nothing happened. Now auto-submits on its own when recognition
+   * ends (silence auto-stop, or clicking the mic again), using the
+   * locally-tracked transcript directly rather than reading `question`
+   * state back out -- a setState from onresult isn't guaranteed visible
+   * yet when onend fires moments later.
    */
   function toggleListening() {
     if (listening) {
@@ -283,18 +299,25 @@ export function ChatClient({ subject }: { subject: string }) {
     recognition.continuous = false;
     recognition.interimResults = true;
     recognition.lang = "en-US";
+    let finalTranscript = "";
     recognition.onresult = (event) => {
       let transcript = "";
       for (let i = 0; i < event.results.length; i++) {
         transcript += event.results[i][0].transcript;
       }
+      finalTranscript = transcript;
       setQuestion(transcript);
     };
     recognition.onerror = (event) => {
       setVoiceError(event.error === "not-allowed" ? "Microphone access was denied." : "Couldn't hear that, try again.");
       setListening(false);
     };
-    recognition.onend = () => setListening(false);
+    recognition.onend = () => {
+      setListening(false);
+      if (finalTranscript.trim()) {
+        submitQuestion(finalTranscript);
+      }
+    };
 
     recognitionRef.current = recognition;
     setVoiceError(null);

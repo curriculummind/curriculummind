@@ -816,3 +816,24 @@ Read-aloud is a persistent mode (a toggle next to the existing FOCUSED/GUIDING h
 * No backend files touched at all.
 * `tsc --noEmit` and `eslint` clean. Verified live in a real browser (logged in as the premium test student): both buttons render correctly, the voice toggle switches state and styling correctly, and normal text-based chat is unaffected (no console errors, no regressions).
 * **Known verification gap, stated plainly**: the actual speech-to-text and text-to-speech round trip (does speaking really fill the box correctly, does a reply actually get read aloud) needs a real microphone and speakers in a real browser -- genuinely not something automatable in this headless environment (fake-media-stream mocking satisfies `getUserMedia` but not Chrome's actual speech-recognition backend). That half of verification is still pending a manual check.
+
+---
+
+# Decision 036 (revised)
+
+**Date:** 2026-10-09
+
+## Decision
+
+Voice mode now auto-submits when the student stops speaking, instead of filling the input box and waiting for a manual send.
+
+## Reason
+
+Reported directly after the first version shipped: clicking the mic and speaking "did nothing" from the student's point of view -- the original design (fill the box, require a manual send, mirroring the file-attachment transcription-review pattern) gave no feedback that anything had happened until the student looked down at the box themselves. Asked directly and confirmed: auto-submit on release is the wanted behavior, accepting the tradeoff that a misheard word now goes straight to the tutor rather than getting a review step first -- a real tradeoff, stated plainly, not silently dropped.
+
+Implementing this surfaced a real correctness issue worth naming: `recognition.onend`'s handler is set up once, when listening starts, so it can't safely read the `question` React state when it fires moments later -- a `setState` from `onresult` isn't guaranteed to be visible yet. Fixed by tracking the transcript in a plain local variable inside the same closure and passing it directly into a new shared `submitQuestion(raw)` helper (extracted from the form's `handleSubmit`, which now just reads `question` state and forwards it) -- avoids the stale-read entirely rather than working around it.
+
+## Impact
+
+* `frontend/src/app/chat/chat-client.tsx`: `handleSubmit` split into a thin form handler plus `submitQuestion(raw: string)`, shared by both the typed-submit path and voice; `toggleListening`'s `onend` now calls `submitQuestion(finalTranscript)` when there's real transcribed text, using a closure-local variable rather than reading back out of state.
+* Verified live, genuinely end to end, not just UI rendering: macOS's own text-to-speech synthesized a real spoken question into a WAV file, fed to Chrome as a fake microphone via `--use-file-for-fake-audio-capture`, so Chrome's actual cloud speech-recognition service did real transcription (not a mock). Clicking "Speak" correctly transcribed "what is a ratio," auto-submitted with no further click, and the real backend returned a correct, grounded, guided-discovery answer -- the full pipeline confirmed working, not assumed.
