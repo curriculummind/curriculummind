@@ -788,3 +788,31 @@ The gate is checked against the actual list of topic names this subject/grade co
 * `app/tutoring/router.py`'s `band == "low"` branch gained a fourth case, checked in order: `sensitive_topic` (unchanged) -> `topic_in_scope` (new) -> `can_answer_generally` (Decision 033, unchanged) -> flat refusal (unchanged). Records `trace_strategy = "guiding_in_scope"` (free-text column, no migration).
 * New tests in `backend/tests/test_general_knowledge.py` for `classify_topic_in_scope`; full suite now 98 tests, all passing.
 * Verified live against the exact reported case: "what is a decimal" and the decimals-vs-ratios follow-up both now stream full-depth, guided-discovery-style answers (anchor + one genuine question, no disclosure); "what is the Pythagorean theorem" still correctly falls through to the disclosed path; a pasted-assignment-style question landing on this tier still gets the assignment acknowledgment and withholds the final answer, confirming guided discovery and academic integrity hold across all three tiers as required.
+
+---
+
+# Decision 036
+
+**Date:** 2026-10-09
+
+## Decision
+
+Push-to-talk voice mode: a mic button lets a student speak a question instead of typing it (transcribed into the same editable input box, nothing sent automatically), and a "Voice on/off" toggle has the tutor's replies read aloud when on. Built entirely with browser-native Web Speech APIs (`SpeechRecognition`, `SpeechSynthesis`) -- no backend change, no new paid vendor, no new ongoing cost.
+
+## Reason
+
+Requested explicitly as the cheap, real first version of voice conversation, not ChatGPT's full real-time duplex Advanced Voice Mode -- that's a materially different, much larger system (streaming audio, interruption handling) and a separate future decision. Confirmed before building that this was fully achievable with built-in browser APIs alone: `SpeechSynthesis` ships fully typed in this project's TypeScript already; `SpeechRecognition` doesn't exist in the bundled `lib.dom.d.ts` at all, so a small hand-written ambient declaration was added rather than pulling in `@types/dom-speech-recognition` for the handful of members actually used.
+
+The transcript lands in the same `question` state the typed textarea already uses, not a separate send-on-speak path -- preserves the same "review before it's sent" property the file-attachment transcription preview already has, for the same reason: speech-to-text, like OCR, is imperfect, and a student should see and be able to fix a misheard word before it reaches the tutor.
+
+Read-aloud is a persistent mode (a toggle next to the existing FOCUSED/GUIDING header badges), not a per-message speaker icon -- it's meant to feel like an actual voice conversation setting, not an accessibility button bolted onto each bubble. Defaults off: auto-speaking a reply the student never asked to hear would be a bad surprise.
+
+`SpeechRecognition` has materially worse browser support than `SpeechSynthesis` (inconsistent or absent in Safari/Firefox desktop) -- the mic button simply doesn't render when neither `window.SpeechRecognition` nor `window.webkitSpeechRecognition` exists, checked via a `useEffect` after mount (not inline, since `window` doesn't exist during Next.js's server render and checking inline would cause a hydration mismatch).
+
+## Impact
+
+* New `frontend/src/types/speech-recognition.d.ts`: a minimal ambient `SpeechRecognition` interface typing only what's used (`start`, `stop`, `onresult`, `onerror`, `onend`, `continuous`, `interimResults`, `lang`).
+* `frontend/src/app/chat/chat-client.tsx`: new state (`voiceMode`, `listening`, `voiceError`, `voiceSupport`), `toggleListening()` wiring a `SpeechRecognition` instance to the existing `setQuestion`, and a post-stream hook in `handleSubmit` that speaks the completed reply via `speechSynthesis.speak(...)` when voice mode is on. New mic button in the existing input row (matches the "Attach file" button styling) and a voice-mode toggle in the header (matches the FOCUSED/GUIDING badge styling), both gated on feature detection.
+* No backend files touched at all.
+* `tsc --noEmit` and `eslint` clean. Verified live in a real browser (logged in as the premium test student): both buttons render correctly, the voice toggle switches state and styling correctly, and normal text-based chat is unaffected (no console errors, no regressions).
+* **Known verification gap, stated plainly**: the actual speech-to-text and text-to-speech round trip (does speaking really fill the box correctly, does a reply actually get read aloud) needs a real microphone and speakers in a real browser -- genuinely not something automatable in this headless environment (fake-media-stream mocking satisfies `getUserMedia` but not Chrome's actual speech-recognition backend). That half of verification is still pending a manual check.

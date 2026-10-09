@@ -73,8 +73,28 @@ export function ChatClient({ subject }: { subject: string }) {
   const [selectedTopic, setSelectedTopic] = useState<SelectedTopic | null>(null);
   const [progressVersion, setProgressVersion] = useState(0);
   const [historyLoading, setHistoryLoading] = useState(true);
+  const [voiceMode, setVoiceMode] = useState(false);
+  const [listening, setListening] = useState(false);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
+  // Computed client-side only (useEffect, not inline) -- `window` isn't
+  // available during Next.js's server render, and checking inline would
+  // cause a hydration mismatch even once it reaches the browser. Kept as
+  // one state object, set once, rather than two separate setState calls.
+  const [voiceSupport, setVoiceSupport] = useState({ recognition: false, synthesis: false });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const scrollAnchorRef = useRef<HTMLDivElement>(null);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
+
+  useEffect(() => {
+    // Reading a browser-only capability after mount, not derived app
+    // state -- window.SpeechRecognition doesn't exist during Next.js's
+    // server render, so there's no inline value to compute instead.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setVoiceSupport({
+      recognition: Boolean(window.SpeechRecognition ?? window.webkitSpeechRecognition),
+      synthesis: "speechSynthesis" in window,
+    });
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -218,11 +238,13 @@ export function ChatClient({ subject }: { subject: string }) {
 
     const reader = res.body?.getReader();
     const decoder = new TextDecoder();
+    let fullContent = "";
 
     while (reader) {
       const { done, value } = await reader.read();
       if (done) break;
       const chunk = decoder.decode(value, { stream: true });
+      fullContent += chunk;
       setMessages((prev) => {
         const next = [...prev];
         next[next.length - 1] = {
@@ -233,8 +255,51 @@ export function ChatClient({ subject }: { subject: string }) {
       });
     }
 
+    if (voiceMode && fullContent && typeof window !== "undefined" && "speechSynthesis" in window) {
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.speak(new SpeechSynthesisUtterance(fullContent));
+    }
+
     setLoading(false);
     setProgressVersion((v) => v + 1);
+  }
+
+  /**
+   * Push-to-talk input (Decision 036): speaking fills the same `question`
+   * state the textarea's own onChange already uses, so the transcript
+   * lands in the same editable box a student can review before sending --
+   * not a separate send-on-speak path. Auto-stops on a pause (not
+   * continuous), so this is click-speak-done, not always-listening.
+   */
+  function toggleListening() {
+    if (listening) {
+      recognitionRef.current?.stop();
+      return;
+    }
+    const RecognitionCtor = window.SpeechRecognition ?? window.webkitSpeechRecognition;
+    if (!RecognitionCtor) return;
+
+    const recognition = new RecognitionCtor();
+    recognition.continuous = false;
+    recognition.interimResults = true;
+    recognition.lang = "en-US";
+    recognition.onresult = (event) => {
+      let transcript = "";
+      for (let i = 0; i < event.results.length; i++) {
+        transcript += event.results[i][0].transcript;
+      }
+      setQuestion(transcript);
+    };
+    recognition.onerror = (event) => {
+      setVoiceError(event.error === "not-allowed" ? "Microphone access was denied." : "Couldn't hear that, try again.");
+      setListening(false);
+    };
+    recognition.onend = () => setListening(false);
+
+    recognitionRef.current = recognition;
+    setVoiceError(null);
+    setListening(true);
+    recognition.start();
   }
 
   async function handleLogout() {
@@ -298,6 +363,21 @@ export function ChatClient({ subject }: { subject: string }) {
               <span className="h-1.5 w-1.5 rounded-full bg-sage" />
               {phaseLabel}
             </div>
+            {voiceSupport.synthesis && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (voiceMode) window.speechSynthesis.cancel();
+                  setVoiceMode((v) => !v);
+                }}
+                className={`flex items-center gap-2 rounded-full border px-3 py-1 font-mono text-xs tracking-wide uppercase ${
+                  voiceMode ? "border-gold/40 bg-gold/8 text-gold" : "border-rule text-ink/50 hover:bg-paper-3"
+                }`}
+              >
+                <span className={`h-1.5 w-1.5 rounded-full ${voiceMode ? "bg-gold" : "bg-ink/30"}`} />
+                Voice {voiceMode ? "on" : "off"}
+              </button>
+            )}
             <button
               onClick={handleLogout}
               className="text-sm text-ink/55 underline underline-offset-2 hover:text-ink"
@@ -409,14 +489,35 @@ export function ChatClient({ subject }: { subject: string }) {
                 onChange={handleFileChange}
                 className="hidden"
               />
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={attaching || loading}
-                className="rounded border border-rule px-3 py-2 text-sm text-ink hover:bg-paper-3 disabled:opacity-50"
-              >
-                {attaching ? "Reading..." : "Attach file"}
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={attaching || loading}
+                  className="rounded border border-rule px-3 py-2 text-sm text-ink hover:bg-paper-3 disabled:opacity-50"
+                >
+                  {attaching ? "Reading..." : "Attach file"}
+                </button>
+                {voiceSupport.recognition && (
+                  <button
+                    type="button"
+                    onClick={toggleListening}
+                    disabled={loading}
+                    aria-label={listening ? "Stop listening" : "Speak your question"}
+                    className={`flex items-center gap-1.5 rounded border px-3 py-2 text-sm disabled:opacity-50 ${
+                      listening
+                        ? "border-gold/40 bg-gold/8 text-gold"
+                        : "border-rule text-ink hover:bg-paper-3"
+                    }`}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
+                      <path d="M19 10v1a7 7 0 0 1-14 0v-1M12 18v3" />
+                    </svg>
+                    {listening ? "Listening..." : "Speak"}
+                  </button>
+                )}
+              </div>
               <button
                 type="submit"
                 disabled={loading || attaching}
@@ -433,6 +534,7 @@ export function ChatClient({ subject }: { subject: string }) {
               </button>
             </div>
             {attachError && <p className="mt-2 text-sm text-red-600">{attachError}</p>}
+            {voiceError && <p className="mt-2 text-sm text-red-600">{voiceError}</p>}
           </form>
         </div>
       </main>
