@@ -876,3 +876,26 @@ Reported directly, with a screenshot: speaking and releasing produced nothing, a
 * `frontend/src/app/chat/chat-client.tsx`'s `toggleListening`: `onend` now distinguishes "got a transcript, submit it" from "got nothing, say so" instead of silently doing nothing in the latter case.
 * Verified live: fed two seconds of genuine silence to Chrome's real speech-recognition pipeline (via `--use-file-for-fake-audio-capture`, not a mock) and confirmed the new message appears and the mic button cleanly resets, instead of silence.
 * Cleaned up the shared test account's conversation history in the database (two conversations, both from this session's own prior automated tests) so the next live test starts from a genuinely clean slate.
+
+---
+
+# Decision 036 (visible-while-speaking + specific error reasons)
+
+**Date:** 2026-10-09
+
+## Decision
+
+Two more voice-mode fixes: a visible banner now shows the live transcript directly above the input while listening, not just updating the (easy-to-miss) textarea underneath; and error messages now surface the browser's actual reason (`network`, `no-speech`, `audio-capture`, `service-not-allowed`, `not-allowed`) instead of one generic "couldn't hear that" for every failure.
+
+## Reason
+
+Reported directly, twice in the same exchange: "it's better if we print the message on screen as the user speaks" (the live transcript was already being written into `question` state and shown in the textarea, but evidently not noticeably enough), and continued reports of "didn't catch anything" even after confirming -- a real, useful diagnostic step -- that Chrome's own recording indicator (the red dot) was active while listening. That confirms the microphone itself is capturing real audio; the failure is happening somewhere between capture and recognition, which could mean several different things (the request to Chrome's cloud speech-recognition service failing over the network, vs. a genuine no-speech timeout) that all looked identical under the one generic error message this shipped with. Surfacing the real reason is the only way to actually narrow this down further, rather than guessing again.
+
+Separately, further live testing (not just this report) surfaced a concrete example of real speech-recognition unreliability: a clean, short audio clip got transcribed as completely unrelated text and auto-submitted -- a real instance of the exact risk already named when auto-submit was chosen over a review-before-send step. Not fixed here (that's a genuine design tradeoff to revisit with the user, not a bug to silently patch), but worth it being on record as observed, not hypothetical.
+
+## Impact
+
+* `frontend/src/app/chat/chat-client.tsx`: a `listening`-gated banner above the textarea shows the live transcript (or "Listening for your question..." before any words land) with a pulsing dot, impossible to miss the way the textarea update apparently was.
+* `onerror`'s single generic message replaced with a lookup table covering the real `SpeechRecognitionErrorEvent.error` values, falling back to showing the raw error code for anything not explicitly named.
+* Verified live: the banner renders correctly during active listening (confirmed via screenshot mid-speech); `tsc`/`eslint` clean.
+* Test conversations created on the shared test account during this round of verification were deleted from the database afterward, same as the previous round -- avoiding another round of confusing a real test session with this session's own leftover data.
