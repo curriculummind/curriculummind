@@ -320,7 +320,19 @@ export function ChatClient({ subject }: { subject: string }) {
       setQuestion(transcript);
     };
     recognition.onerror = (event) => {
-      setVoiceError(event.error === "not-allowed" ? "Microphone access was denied." : "Couldn't hear that, try again.");
+      // Surfaces the browser's actual reason rather than one generic
+      // message -- "network" (mic captured fine, the request to the
+      // speech-recognition service itself failed) and "no-speech" look
+      // identical to a student otherwise, but need completely different
+      // fixes, and this is the one signal that tells them apart.
+      const messages: Record<string, string> = {
+        "not-allowed": "Microphone access was denied.",
+        "no-speech": "Didn't catch anything. Try again, a little closer to the mic.",
+        network: "Couldn't reach the speech recognition service (network issue, not the microphone).",
+        "audio-capture": "No microphone found or it isn't working.",
+        "service-not-allowed": "The speech service blocked this request.",
+      };
+      setVoiceError(messages[event.error] ?? `Voice recognition error: ${event.error}.`);
       setListening(false);
     };
     recognition.onend = () => {
@@ -506,6 +518,12 @@ export function ChatClient({ subject }: { subject: string }) {
 
         <div className="flex justify-center border-t border-rule px-8 py-4">
           <form onSubmit={handleSubmit} className="w-full max-w-[700px]">
+            {listening && (
+              <div className="mb-2 flex items-center gap-2 rounded border border-gold/40 bg-gold/8 px-3 py-2 text-sm text-ink/80">
+                <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-gold" />
+                {question ? question : "Listening for your question..."}
+              </div>
+            )}
             <textarea
               placeholder={attaching ? "Reading your file..." : "Ask a question, or answer the one above..."}
               required
