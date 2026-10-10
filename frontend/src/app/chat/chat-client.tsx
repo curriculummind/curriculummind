@@ -327,6 +327,11 @@ export function ChatClient({ subject }: { subject: string }) {
       setListening(false);
       if (finalTranscript.trim()) {
         submitQuestion(finalTranscript);
+      } else {
+        // Some browsers end recognition on silence without ever firing
+        // onerror -- zero transcript and zero feedback otherwise, which
+        // is indistinguishable from the mic not working at all.
+        setVoiceError("Didn't catch anything. Try again, a little closer to the mic.");
       }
     };
 

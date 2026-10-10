@@ -856,3 +856,23 @@ Reported directly: clicking the mic, speaking, and releasing produced no visible
 
 * `frontend/src/app/chat/chat-client.tsx`'s `toggleListening`: stops any existing `recognitionRef.current` (wrapped in try/catch, since stopping an already-stopped or never-started recognizer can itself throw) before creating a new one; `recognition.start()` wrapped in try/catch, reverting `listening` to `false` and setting a visible `voiceError` message on failure instead of leaving the UI stuck.
 * Verified live: re-ran the same real-speech-to-real-answer end-to-end test (synthesized audio fed to Chrome as a fake microphone) to confirm normal operation is unaffected, plus a deliberate rapid-double-click stress test targeting the exact stale-instance scenario this fix addresses -- no stuck state, no silent failure, the mic button correctly returned to its idle state every time.
+
+---
+
+# Decision 036 (no-speech feedback)
+
+**Date:** 2026-10-09
+
+## Decision
+
+When voice recognition ends with no speech captured, the student now sees "Didn't catch anything. Try again, a little closer to the mic." instead of the mic button silently reverting with no feedback at all.
+
+## Reason
+
+Reported directly, with a screenshot: speaking and releasing produced nothing, and attempting to submit the empty box just surfaced the browser's own generic "Please fill out this field" validation -- not a message this app controls, and not helpful. Root cause: some browsers end `SpeechRecognition` on silence without ever firing `onerror`, so a zero-transcript result and a real working-but-nothing-heard mic looked identical -- both were silent. The screenshot's visible "super" message turned out to be leftover from this session's own automated testing (local dev and production share one database, confirmed earlier this project), not from the student's own attempt -- cleared directly from the database, unrelated to this code fix.
+
+## Impact
+
+* `frontend/src/app/chat/chat-client.tsx`'s `toggleListening`: `onend` now distinguishes "got a transcript, submit it" from "got nothing, say so" instead of silently doing nothing in the latter case.
+* Verified live: fed two seconds of genuine silence to Chrome's real speech-recognition pipeline (via `--use-file-for-fake-audio-capture`, not a mock) and confirmed the new message appears and the mic button cleanly resets, instead of silence.
+* Cleaned up the shared test account's conversation history in the database (two conversations, both from this session's own prior automated tests) so the next live test starts from a genuinely clean slate.
